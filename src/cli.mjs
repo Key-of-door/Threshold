@@ -7,12 +7,55 @@ import { startService } from './service.mjs';
 
 const usage = 'threshold serve | project create | board | task create | task update | message send | message read | status | run | stop | decision\nSee README.md for flags and local service limits.';
 
+// Compact human rendering for `status --summary` / `board --summary`. Default output stays JSON.
+const firstLine = value => String(value ?? '').split(/\r?\n/, 1)[0].trim();
+function summaryTask({ task, project, checkpoint, recentRuns = [], messageInbox }) {
+  const lines = [`Task ${task.id}`, `  title: ${task.title}`, `  status: ${task.status}`];
+  if (project) lines.push(`  project: ${project.id} (${project.name})`);
+  lines.push(checkpoint ? `  checkpoint: ${checkpoint.created_at} - ${firstLine(checkpoint.summary)}` : '  checkpoint: none');
+  if (recentRuns.length) {
+    lines.push('  runs:');
+    for (const run of recentRuns) {
+      const objective = firstLine(run.objective);
+      lines.push(`    ${run.id} ${run.status} ${run.started_at}${objective ? ` - ${objective}` : ''}`);
+    }
+  } else lines.push('  runs: none');
+  if (messageInbox) lines.push(`  inbox: ${messageInbox.count} message(s), latest id ${messageInbox.latestId}`);
+  return lines.join('\n');
+}
+function summaryRun(run) {
+  const lines = [`Run ${run.id}`, `  status: ${run.status}`, `  task: ${run.task_id}`,
+    `  provider/model: ${run.provider}/${run.model}`, `  started: ${run.started_at}`, `  ended: ${run.ended_at ?? '-'}`];
+  if (run.objective) lines.push(`  objective: ${firstLine(run.objective)}`);
+  if (run.error) lines.push(`  error: ${firstLine(run.error)}`);
+  return lines.join('\n');
+}
+function summaryGlobal({ projects = [], tasks = [] }) {
+  const lines = [`Projects: ${projects.length}`];
+  for (const project of projects) lines.push(`  ${project.id} ${project.name} (${project.repo_path})`);
+  lines.push(`Tasks: ${tasks.length}`);
+  for (const task of tasks) lines.push(`  ${task.id} ${task.status} - ${task.title}`);
+  return lines.join('\n');
+}
+function summaryBoard({ project, resources, tasks = [] }) {
+  const lines = [`Project ${project.id} (${project.name})`];
+  if (resources) lines.push(`  runs: ${resources.started} started, ${resources.unsettled} unsettled, ${resources.remainingStarts} remaining`);
+  lines.push(`Tasks: ${tasks.length}`);
+  for (const task of tasks) {
+    lines.push(`  ${task.id} ${task.status} - ${task.title}`);
+    const latest = task.latestRun ? `${task.latestRun.id} ${task.latestRun.status}` : 'none';
+    const checkpoint = task.checkpoint ? `${task.checkpoint.created_at} - ${firstLine(task.checkpoint.summary)}` : 'none';
+    lines.push(`    latest run: ${latest}; checkpoint: ${checkpoint}`);
+  }
+  return lines.join('\n');
+}
+
 async function main() {
   let args, commands;
   try {
     ({ values: args, positionals: commands } = parseArgs({ allowPositionals: true, options:
       { ...Object.fromEntries(['home', 'agent-dir', 'port', 'name', 'repo', 'project', 'title', 'instructions', 'task', 'provider', 'model', 'run', 'target', 'value', 'objective', 'status', 'note', 'body', 'after', 'limit', 'workspace', 'max-parallel-runs', 'max-runs'].map(key => [key, { type: 'string' }])),
-        skill: { type: 'string', multiple: true }, extension: { type: 'string', multiple: true } } }));
+        skill: { type: 'string', multiple: true }, extension: { type: 'string', multiple: true }, summary: { type: 'boolean' } } }));
   } catch (error) { console.error(error.message); return 1; }
   const home = resolve(args.home ?? '.local/threshold');
   const print = value => process.stdout.write(JSON.stringify(value, null, 2) + '\n');
@@ -39,12 +82,21 @@ async function main() {
         break;
       }
       case 'project create': print(await call('/projects', { name: args.name, repoPath: args.repo && resolve(args.repo) })); break;
-      case 'board': print(await call(`/projects/${encodeURIComponent(args.project ?? '')}/board`)); break;
+      case 'board': {
+        const board = await call(`/projects/${encodeURIComponent(args.project ?? '')}/board`);
+        if (args.summary) process.stdout.write(summaryBoard(board) + '\n'); else print(board);
+        break;
+      }
       case 'task create': print(await call('/tasks', { projectId: args.project, title: args.title, instructions: args.instructions })); break;
       case 'task update': print(await call(`/tasks/${encodeURIComponent(args.task ?? '')}/status`, { status: args.status, note: args.note })); break;
       case 'message send': print(await call(`/tasks/${encodeURIComponent(args.task ?? '')}/messages`, { body: args.body })); break;
       case 'message read': print(await call(`/tasks/${encodeURIComponent(args.task ?? '')}/messages?after=${encodeURIComponent(args.after ?? '0')}&limit=${encodeURIComponent(args.limit ?? '10')}`)); break;
-      case 'status': print(await call(args.task ? `/tasks/${encodeURIComponent(args.task)}` : args.run ? `/runs/${encodeURIComponent(args.run)}` : '/status')); break;
+      case 'status': {
+        const state = await call(args.task ? `/tasks/${encodeURIComponent(args.task)}` : args.run ? `/runs/${encodeURIComponent(args.run)}` : '/status');
+        if (args.summary) process.stdout.write((args.task ? summaryTask(state) : args.run ? summaryRun(state) : summaryGlobal(state)) + '\n');
+        else print(state);
+        break;
+      }
       case 'run': print(await call(`/tasks/${encodeURIComponent(args.task ?? '')}/runs`, { provider: args.provider, model: args.model, objective: args.objective,
         workspacePath: args.workspace && resolve(args.workspace), skills: args.skill?.map(path => resolve(path)), extensions: args.extension?.map(path => resolve(path)) })); break;
       case 'stop': print(await call(args.run ? `/runs/${encodeURIComponent(args.run)}/stop` : '/shutdown', {})); break;
