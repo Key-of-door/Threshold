@@ -29,6 +29,8 @@ node src/cli.mjs run --task TASK_ID --provider deepseek --model deepseek-flash
 node src/cli.mjs run --task TASK_ID --provider deepseek --model deepseek-flash --objective "完成剩余 CLI，运行完整测试，保存 checkpoint 并评估 Task 状态"
 node src/cli.mjs status --run RUN_ID
 node src/cli.mjs status --task TASK_ID
+# 紧凑的人类摘要（JSON 默认输出不变，供脚本使用）：Task/Run ids、状态、最新 checkpoint 首行与最近 Run
+node src/cli.mjs status --task TASK_ID --summary
 node src/cli.mjs stop
 ```
 
@@ -113,6 +115,8 @@ Skill 注册进 Pi catalog 与正文被模型读取是两件事。服务检查�
 
 ```powershell
 node src/cli.mjs board --project PROJECT_ID
+# 同一 --summary 也适用于 board：紧凑列出 Task 状态、最新 Run 与 checkpoint 首行
+node src/cli.mjs board --project PROJECT_ID --summary
 # 一个普通 Run 显式选择调度能力；不产生 Manager 身份。
 node src/cli.mjs run --task TASK_ID --provider deepseek --model deepseek-flash --skill capabilities/project-scheduler --extension src/scheduler.ts --objective "读取 Board，安排独立工作并留下接手说明"
 # worktree 由普通 Git 创建；同一 Project 中的 Run 可以选择不同工作目录。
