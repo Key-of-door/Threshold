@@ -226,7 +226,8 @@ export async function startService({ home, agentDir, port = 8765, workerFactory 
           if (!['allow', 'deny'].includes(data.decision)) throw problem(400, 'Expected allow or deny');
           return reply(200, store.decide(text(data.taskId, 'taskId'), target(data.target), data.decision));
         }
-        if (method === 'GET' && path === '/status') return reply(200, { projects: store.projects(), tasks: store.tasks() });
+        // Compact index only; full Task detail stays on GET /tasks/:id.
+        if (method === 'GET' && path === '/status') return reply(200, store.statusIndex());
         const projectBoard = path.match(/^\/projects\/([^/]+)\/board$/);
         if (method === 'GET' && projectBoard) return reply(200, board(projectBoard[1]));
         if (method === 'POST' && path === '/projects') {
