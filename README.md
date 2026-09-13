@@ -43,7 +43,7 @@ node src/cli.mjs task update --task TASK_ID --status in_progress --note "复核�
 
 当前仅提供 `in_progress` / `done`，可随时按实际工作重新打开。服务保存最近一次更新的说明、时间，以及入口来源（`agent` + Run ID，或 `client`）。这是普通工作状态及提交者的判断；不表示独立验证成功或 Human acceptance。`client` 也不意味着已认证为 Human。Task 状态不会授予部署权限、终止现有 Run 或自动开启下一轮。
 
-当前 worker 仍采用小范围启动配置：显式加载 Threshold extension，关闭自动扩展、skills、prompt templates 和 AGENTS/CLAUDE 文件发现；本轮要求写在 Task 中。每个回合目前最多等待 3 分钟。这些是当前实现限制，不是跨 runtime contract，也不是完整日常开发客户端。
+当前 worker 显式加载 Threshold extension，关闭自动扩展、skills、prompt templates 和 AGENTS/CLAUDE 文件发现；本轮要求写在 Task 中。可为单个 Run 显式选择额外 skill/extension，见下文。每个回合目前最多等待 3 分钟。这些是当前实现限制，不是跨 runtime contract，也不是完整日常开发客户端。
 
 再次执行 `serve`，然后对原 Task 执行 `run`。新 worker 通过 `read_task` 得到持久状态、最近 Run 和当时新读取的 Git 状态，并被要求检查 diff/相关文件后继续。`save_checkpoint` 追加工作摘要，同时服务独立读取 Git 身份。摘要标为 `agent_summary`；Git 读取标为 `git_observation`。
 
@@ -89,6 +89,26 @@ node src/cli.mjs message read --task TASK_ID --after ID --limit 10
 
 checkpoint 说明这轮工作停在哪里；message 传达给协作者的具体内容。回复可以在正文中引用消息 ID，暂不建立 request/acknowledge/close 流程。若发送响应丢失，应先读取 inbox 再决定是否重发；重复发送会新增一行，没有 exactly-once 承诺。
 
+## 单个 Run 的能力选择
+
+将现成能力文件放在普通目录即可；不需要运行 `pi install`、修改全局设置或登记 registry。选择 skill 文件（也可以传包含 `SKILL.md` 的目录）和 extension 入口文件：
+
+```powershell
+node src/cli.mjs run --task TASK_ID --provider deepseek --model deepseek-flash --skill "E:/my-capabilities/reviewer/SKILL.md" --objective "独立检查当前实现"
+# 参数可以重复；没有指定的下一 Run 不继承。
+node src/cli.mjs run --task TASK_ID --provider deepseek --model deepseek-flash --skill "E:/my-capabilities/coding/SKILL.md" --extension "E:/my-capabilities/tool.ts"
+```
+
+CLI 相对路径按调用者当前目录展开；HTTP 的 `skills` / `extensions` 数组须使用绝对本地路径。每类最多 16 个，默认均为空。暂不支持按名称搜索、npm/Git spec、Project defaults 或目录批量加载 extension。
+
+Pi 保持 `--no-skills --no-extensions`，再接收本次明确选中的路径；固定的 Threshold collaboration extension 始终加载。Pi 负责解析 skill、加载 extension 和执行工具。普通工具使用 Pi 默认集合（当前为 read/bash/edit/write；本机 bash 使用 Git Bash），选中的 extension 注册其工具。原先固定的 `--tools` 白名单会屏蔽额外工具，因此已移除。
+
+Skill 注册进 Pi catalog 与正文被模型读取是两件事。服务检查选中 skill 的 catalog 路径，并提示 worker 在读取 Task 后读取选中的正文；仍需通过实际 tool observation 判断模型有没有读取、怎样使用。Run 的 `capabilities` 只保存本次选择的路径和入口文件 SHA-256，不是成功加载证明、完整依赖快照或正文遵从保证。旧 Run 保持 null，新 Run 未选择时为两个空数组。近期 Run metadata 是历史，不自动成为本次配置。
+
+这里提供运行配置分离，不是文件或进程 sandbox；共享 Project 的消息当然可以影响后续判断。任意 extension 自身的自动发现、写入或外部 effect 不自动获得 Threshold STOP 保证。只有接入具体 controlled adapter 的操作才有相应保证。
+
+本轮研究、样本与真实 F/G 观察见 [Per-Run capabilities](docs/per-run-capabilities.md)。
+
 ## 状态与实现
 
 | 模块 | 职责 |
@@ -96,13 +116,14 @@ checkpoint 说明这轮工作停在哪里；message 传达给协作者的具体�
 | `src/service.mjs` | 本地 HTTP、Run 生命周期、具体 API 入口 |
 | `src/store.mjs` | 普通 SQL 与 migration；七张表 |
 | `src/pi.mjs` | Pi 进程/RPC/取消；不拥有模型循环 |
+| `src/capabilities.mjs` | 本地入口文件选择与调试用哈希 |
 | `src/extension.ts` | 任务/checkpoint、显式状态、消息收发、`fake_deploy` |
 | `src/git.mjs` | 按需 Git 读取 |
 | `src/cli.mjs` | 服务客户端与启动入口 |
 
 七张表是 `projects / tasks / runs / checkpoints / decisions / fake_deployments / messages`。SQLite 使用 WAL、foreign keys、5 秒 busy timeout、`synchronous=FULL` 和短 transaction。模型、HTTP、Git 不在数据库 transaction 内执行。
 
-schema v2 增加 Run objective 和 Task 最近状态更新 metadata；当前 v3 增加 messages 表与 Task/ID 索引。已有数据保留；旧 Run 的 objective 和旧 Task 的状态提交来源为空，不从历史摘要推断补填。没有新增完整状态变更账本。
+schema v2 增加 Run objective 和 Task 最近状态更新 metadata；v3 增加 messages 表与 Task/ID 索引；当前 v4 仅给 Run 增加 capabilities JSON 字段。已有数据保留；历史字段未知时保持空值，不从摘要推断补填。没有新增完整状态变更账本或 capability registry 表。
 
 默认数据位于 `.local/threshold`，由一个服务独占写入。`server.lock` 防止同一数据目录开两个 writer。正常关闭会清理服务定位文件与锁；异常退出后的锁不会自动删除，应先检查记录的 PID、旧 worker 和现场，再清理精确的 stale lock。重新打开 DB 时，没有退出观察的旧 Run 标为 `unknown`，不会自动重放。
 

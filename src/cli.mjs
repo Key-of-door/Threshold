@@ -6,7 +6,8 @@ import { homedir } from 'node:os';
 import { startService } from './service.mjs';
 
 const { values: args, positionals: commands } = parseArgs({ allowPositionals: true, options:
-  Object.fromEntries(['home', 'agent-dir', 'port', 'name', 'repo', 'project', 'title', 'instructions', 'task', 'provider', 'model', 'run', 'target', 'value', 'objective', 'status', 'note', 'body', 'after', 'limit'].map(key => [key, { type: 'string' }])) });
+  { ...Object.fromEntries(['home', 'agent-dir', 'port', 'name', 'repo', 'project', 'title', 'instructions', 'task', 'provider', 'model', 'run', 'target', 'value', 'objective', 'status', 'note', 'body', 'after', 'limit'].map(key => [key, { type: 'string' }])),
+    skill: { type: 'string', multiple: true }, extension: { type: 'string', multiple: true } } });
 const home = resolve(args.home ?? '.local/threshold');
 const print = value => process.stdout.write(JSON.stringify(value, null, 2) + '\n');
 async function call(path, data, human = false) {
@@ -35,7 +36,8 @@ try {
     case 'message send': print(await call(`/tasks/${encodeURIComponent(args.task ?? '')}/messages`, { body: args.body })); break;
     case 'message read': print(await call(`/tasks/${encodeURIComponent(args.task ?? '')}/messages?after=${encodeURIComponent(args.after ?? '0')}&limit=${encodeURIComponent(args.limit ?? '10')}`)); break;
     case 'status': print(await call(args.task ? `/tasks/${encodeURIComponent(args.task)}` : args.run ? `/runs/${encodeURIComponent(args.run)}` : '/status')); break;
-    case 'run': print(await call(`/tasks/${encodeURIComponent(args.task ?? '')}/runs`, { provider: args.provider, model: args.model, objective: args.objective })); break;
+    case 'run': print(await call(`/tasks/${encodeURIComponent(args.task ?? '')}/runs`, { provider: args.provider, model: args.model, objective: args.objective,
+      skills: args.skill?.map(path => resolve(path)), extensions: args.extension?.map(path => resolve(path)) })); break;
     case 'stop': print(await call(args.run ? `/runs/${encodeURIComponent(args.run)}/stop` : '/shutdown', {})); break;
     case 'decision': print(await call('/human/decisions', { taskId: args.task, target: args.target, decision: args.value }, true)); break;
     default: console.log('threshold serve | project create | task create | task update | message send | message read | status | run | stop | decision\nSee README.md for flags and local service limits.');

@@ -3,12 +3,13 @@ import { EventEmitter } from 'node:events';
 import { fileURLToPath } from 'node:url';
 
 // A Pi process client, not a cross-runtime abstraction. No project state lives here.
-export function startPi({ cwd, agentDir, provider, model, env, onEvent = () => {} }) {
+export function startPi({ cwd, agentDir, provider, model, env, capabilities = { skills: [], extensions: [] }, onEvent = () => {} }) {
   const cli = fileURLToPath(new URL('../node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js', import.meta.url));
   const extension = fileURLToPath(new URL('./extension.ts', import.meta.url));
   const child = spawn(process.execPath, [cli, '--mode', 'rpc', '--offline', '--no-extensions',
     '--no-skills', '--no-context-files', '--no-prompt-templates', '--no-themes', '--no-approve',
-    '--tools', 'read,write,edit,powershell,bash,read_task,save_checkpoint,update_task_status,send_message,read_messages,fake_deploy',
+    ...capabilities.skills.flatMap(file => ['--skill', file.path]),
+    ...capabilities.extensions.flatMap(file => ['--extension', file.path]),
     '--extension', extension, '--provider', provider, '--model', model, '--thinking', 'low',
     '--no-session'], { cwd, shell: false, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'],
     env: { ...process.env, ...env, PI_CODING_AGENT_DIR: agentDir, PI_TELEMETRY: '0' } });

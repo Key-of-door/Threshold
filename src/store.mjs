@@ -6,7 +6,7 @@ export function openStore(path) {
   const db = new DatabaseSync(path);
   db.exec('PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000; PRAGMA synchronous=FULL;');
   const version = db.prepare('PRAGMA user_version').get().user_version;
-  if (version > 3) { db.close(); throw new Error('Database is newer than this service'); }
+  if (version > 4) { db.close(); throw new Error('Database is newer than this service'); }
   if (version === 0) db.exec(`BEGIN IMMEDIATE;
     CREATE TABLE projects (id TEXT PRIMARY KEY, name TEXT NOT NULL, repo_path TEXT NOT NULL UNIQUE, created_at TEXT NOT NULL);
     CREATE TABLE tasks (id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id), title TEXT NOT NULL, instructions TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'in_progress');
@@ -24,6 +24,10 @@ export function openStore(path) {
     CREATE TABLE messages (id INTEGER PRIMARY KEY AUTOINCREMENT, task_id TEXT NOT NULL REFERENCES tasks(id), from_run_id TEXT REFERENCES runs(id), body TEXT NOT NULL, created_at TEXT NOT NULL);
     CREATE INDEX messages_task ON messages(task_id,id);
     PRAGMA user_version=3; COMMIT;`);
+  if (version < 4) db.exec(`BEGIN IMMEDIATE;
+    ALTER TABLE runs ADD COLUMN capabilities_json TEXT;
+    PRAGMA user_version=4; COMMIT;`);
+  const readRun = row => row ? { ...row, capabilities: row.capabilities_json ? JSON.parse(row.capabilities_json) : null, capabilities_json: undefined } : undefined;
   db.prepare("UPDATE runs SET status='unknown', error='Service restarted without a process exit observation' WHERE status IN ('starting','running')").run();
   const requiredTask = id => {
     const task = db.prepare('SELECT * FROM tasks WHERE id=?').get(id);
@@ -57,7 +61,7 @@ export function openStore(path) {
       const checkpoint = db.prepare('SELECT * FROM checkpoints WHERE task_id=? ORDER BY rowid DESC LIMIT 1').get(id);
       return { task, project: this.project(task.project_id),
         checkpoint: checkpoint ? { ...checkpoint, source: 'agent_summary', git: JSON.parse(checkpoint.git_json), git_json: undefined } : null,
-        recentRuns: db.prepare('SELECT * FROM runs WHERE task_id=? ORDER BY rowid DESC LIMIT 5').all(id),
+        recentRuns: db.prepare('SELECT * FROM runs WHERE task_id=? ORDER BY rowid DESC LIMIT 5').all(id).map(readRun),
         messageInbox: { scope: 'task', ...db.prepare('SELECT COUNT(*) AS count, COALESCE(MAX(id),0) AS latestId FROM messages WHERE task_id=?').get(id) } };
     },
     sendMessage(taskId, body, runId = null) {
@@ -80,13 +84,13 @@ export function openStore(path) {
       db.prepare('INSERT INTO checkpoints VALUES (?,?,?,?,?,?)').run(checkpoint.id, taskId, runId, summary, JSON.stringify(git), checkpoint.created_at);
       return checkpoint;
     },
-    startRun(taskId, provider, model, objective = null) {
+    startRun(taskId, provider, model, objective = null, capabilities = { skills: [], extensions: [] }) {
       requiredTask(taskId);
       const id = randomUUID();
-      db.prepare("INSERT INTO runs(id,task_id,provider,model,status,started_at,objective) VALUES (?,?,?,?,'starting',?,?)").run(id, taskId, provider, model, now(), objective);
+      db.prepare("INSERT INTO runs(id,task_id,provider,model,status,started_at,objective,capabilities_json) VALUES (?,?,?,?,'starting',?,?,?)").run(id, taskId, provider, model, now(), objective, JSON.stringify(capabilities));
       return this.run(id);
     },
-    run: id => db.prepare('SELECT * FROM runs WHERE id=?').get(id),
+    run: id => readRun(db.prepare('SELECT * FROM runs WHERE id=?').get(id)),
     running(id, sessionId) { db.prepare("UPDATE runs SET status='running',session_id=? WHERE id=?").run(sessionId, id); },
     endRun(id, exit, error) { db.prepare("UPDATE runs SET status='ended',ended_at=?,exit_code=?,error=? WHERE id=?").run(now(), exit.code, error ?? null, id); },
     decide(taskId, target, decision) {

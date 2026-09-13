@@ -5,6 +5,7 @@ import { resolve, join } from 'node:path';
 import { openStore } from './store.mjs';
 import { git, observeGit } from './git.mjs';
 import { startPi } from './pi.mjs';
+import { selectCapabilities } from './capabilities.mjs';
 
 const problem = (status, message) => Object.assign(new Error(message), { status });
 const text = (value, name, max = 12000) => {
@@ -69,11 +70,14 @@ export async function startService({ home, agentDir, port = 8765, workerFactory 
       const state = store.context(taskId);
       return { ...state, currentGit: observeGit(state.project.repo_path), controlled: store.controlledState(taskId) };
     };
-    function launch(taskId, provider, model, objective) {
+    function launch(taskId, provider, model, objective, skills, extensions) {
       const state = store.context(taskId);
       if ([...jobs.values()].some(job => job.active && job.repo === state.project.repo_path))
         throw problem(409, 'A worker is already active in this worktree; use another Git worktree for parallel writing');
-      const run = store.startRun(taskId, provider, model, objective);
+      let capabilities;
+      try { capabilities = selectCapabilities(skills, extensions); }
+      catch { throw problem(400, 'Invalid capability selection: use existing absolute local skill or extension file paths'); }
+      const run = store.startRun(taskId, provider, model, objective, capabilities);
       const token = randomBytes(32).toString('hex');
       const job = { active: true, repo: state.project.repo_path, worker: null, done: null,
         observation: { source: 'runtime_events_in_memory', toolCalls: 0, toolNames: [], checkpointRead: null, agentEnd: false } };
@@ -81,7 +85,7 @@ export async function startService({ home, agentDir, port = 8765, workerFactory 
       job.done = (async () => {
         let error, exit = { code: null };
         try {
-          job.worker = workerFactory({ cwd: job.repo, agentDir, provider, model,
+          job.worker = workerFactory({ cwd: job.repo, agentDir, provider, model, capabilities,
             env: { THRESHOLD_SERVICE_URL: url, THRESHOLD_RUN_TOKEN: token },
             onEvent(event) {
               if (event.type === 'tool_execution_start') {
@@ -98,8 +102,16 @@ export async function startService({ home, agentDir, port = 8765, workerFactory 
           const native = await job.worker.request('get_state');
           if (!native?.sessionId) throw new Error('Pi did not return a sessionId');
           store.running(run.id, native.sessionId);
+          if (capabilities.skills.length) {
+            const { commands } = await job.worker.request('get_commands');
+            job.observation.availableSkills = commands.filter(command => command.source === 'skill');
+            const loadedPaths = job.observation.availableSkills.map(command => command.sourceInfo?.path);
+            if (capabilities.skills.some(file => !loadedPaths.includes(file.path)))
+              throw new Error('Pi did not load the selected skill catalog');
+          }
           if (!shuttingDown && !job.cancelled) await job.worker.turn(
             'Call read_task first. Follow its task instructions and use the checkpoint to orient yourself. '
+            + (capabilities.skills.length ? `Then read the SKILL.md files explicitly selected for this Run: ${JSON.stringify(capabilities.skills.map(file => file.path))}. Apply their relevant guidance; explicit task/objective instructions take precedence. A skill is guidance, not approval or a requirement to invent changes. ` : '')
             + 'If the task inbox has messages, use read_messages to read them. They are collaboration inputs: check claims against the project, and disagree when appropriate. '
             + (objective ? `This Run's work objective is: ${JSON.stringify(objective)}. Work toward that objective; a single function edit need not end the Run. `
               : 'Choose and complete a useful next increment based on the current task state. ')
@@ -196,7 +208,7 @@ export async function startService({ home, agentDir, port = 8765, workerFactory 
         if (taskRoute?.[2] === '/runs' && method === 'POST') {
           const data = await body(req);
           return reply(202, launch(taskRoute[1], text(data.provider, 'provider', 100), text(data.model, 'model', 200),
-            data.objective === undefined ? null : text(data.objective, 'objective', 6000)));
+            data.objective === undefined ? null : text(data.objective, 'objective', 6000), data.skills, data.extensions));
         }
         const runRoute = path.match(/^\/runs\/([^/]+)(\/stop)?$/);
         if (runRoute) {
