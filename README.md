@@ -135,6 +135,8 @@ node src/cli.mjs run --task TASK_ID --provider deepseek --model deepseek-flash -
 
 这些是 managed launch 资源限制，不是 token/金额上限或同用户任意 shell 的 sandbox。未加载扩展意味着没有对应工具，不代表同用户无法调用普通客户端入口；普通入口同样经过资源检查。未知退出占用工作目录和额度，需实际排查旧进程，当前没有自动清理未知状态的接口。
 
+第一次 scheduler → 并行 workers → 替换 scheduler 的 self-hosting 观察见 [Project scheduling](docs/project-scheduling-2026-09-13.md)，包括一次未完成的初始 Run。
+
 ## 状态与实现
 
 | 模块 | 职责 |
