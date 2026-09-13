@@ -55,6 +55,15 @@ export function openStore(path) {
     project: id => db.prepare('SELECT * FROM projects WHERE id=?').get(id),
     projects: () => db.prepare('SELECT * FROM projects ORDER BY created_at').all(),
     tasks: () => db.prepare('SELECT id FROM tasks').all().map(row => requiredTask(row.id)),
+    // Compact index for the bare `status` CLI: no instructions, checkpoints or Run objectives.
+    statusIndex() {
+      return {
+        projects: db.prepare('SELECT id, name, repo_path FROM projects ORDER BY created_at').all(),
+        tasks: db.prepare('SELECT id, project_id, title, status, status_update_json FROM tasks ORDER BY rowid').all()
+          .map(row => ({ id: row.id, project_id: row.project_id, title: row.title, status: row.status,
+            status_update: row.status_update_json ? JSON.parse(row.status_update_json) : null })),
+      };
+    },
     updateTaskStatus(taskId, status, note, runId = null) {
       requiredTask(taskId);
       const update = { source: runId ? 'agent' : 'client', runId, note, updatedAt: now() };
