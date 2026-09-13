@@ -15,6 +15,10 @@ const target = value => {
   if (!['staging', 'preview'].includes(value)) throw problem(400, 'Supported fake targets: staging, preview');
   return value;
 };
+const taskStatus = value => {
+  if (!['in_progress', 'done'].includes(value)) throw problem(400, 'Task status must be in_progress or done');
+  return value;
+};
 async function body(req) {
   if (req.headers['content-type']?.split(';')[0] !== 'application/json') throw problem(415, 'Expected application/json');
   let bytes = 0; const chunks = [];
@@ -60,11 +64,11 @@ export async function startService({ home, agentDir, port = 8765, workerFactory 
       const state = store.context(taskId);
       return { ...state, currentGit: observeGit(state.project.repo_path), controlled: store.controlledState(taskId) };
     };
-    function launch(taskId, provider, model) {
+    function launch(taskId, provider, model, objective) {
       const state = store.context(taskId);
       if ([...jobs.values()].some(job => job.active && job.repo === state.project.repo_path))
         throw problem(409, 'A worker is already active in this worktree; use another Git worktree for parallel writing');
-      const run = store.startRun(taskId, provider, model);
+      const run = store.startRun(taskId, provider, model, objective);
       const token = randomBytes(32).toString('hex');
       const job = { active: true, repo: state.project.repo_path, worker: null, done: null,
         observation: { source: 'runtime_events_in_memory', toolCalls: 0, toolNames: [], checkpointRead: null, agentEnd: false } };
@@ -90,10 +94,14 @@ export async function startService({ home, agentDir, port = 8765, workerFactory 
           if (!native?.sessionId) throw new Error('Pi did not return a sessionId');
           store.running(run.id, native.sessionId);
           if (!shuttingDown && !job.cancelled) await job.worker.turn(
-            'Call read_task first. Follow its task instructions and latest checkpoint to complete one small next step. '
+            'Call read_task first. Follow its task instructions and use the checkpoint to orient yourself. '
+            + (objective ? `This Run's work objective is: ${JSON.stringify(objective)}. Work toward that objective; a single function edit need not end the Run. `
+              : 'Choose and complete a useful next increment based on the current task state. ')
             + 'Re-observe Git status/diff and relevant files before editing; the checkpoint is an Agent summary, not current truth. '
             + 'Run the relevant check, then save_checkpoint with what changed, the actual check result, open issues and next step. '
-            + 'Do not push. Ordinary work needs no deployment decision. Finish this turn after saving the checkpoint.');
+            + 'Use update_task_status explicitly if your assessment of the whole Task changes; finishing a Run objective alone does not mean the Task is done. '
+            + 'A Task marked done can be reopened as in_progress if work remains. Task status is a work assessment, not Human approval. '
+            + 'Do not push. Ordinary work needs no deployment decision. If you cannot finish the objective, record the remaining work honestly before ending.');
         } catch (caught) {
           // Provider errors can contain credentials. Do not persist raw provider output.
           error = 'Runtime request failed; check runtime/provider configuration and re-observe project state';
@@ -125,12 +133,16 @@ export async function startService({ home, agentDir, port = 8765, workerFactory 
         if (path.startsWith('/agent/')) {
           const run = tokens.get(req.headers.authorization?.replace(/^Bearer /, ''));
           if (!run) throw problem(401, 'Active run credential required');
-          if (method === 'GET' && path === '/agent/task') return reply(200, context(run.task_id));
+          if (method === 'GET' && path === '/agent/task') return reply(200, { ...context(run.task_id), currentRun: store.run(run.id) });
           if (method === 'POST' && path === '/agent/checkpoints') {
             const data = await body(req);
             return reply(201, store.checkpoint(run.task_id, run.id, text(data.summary, 'summary'), observeGit(jobs.get(run.id).repo)));
           }
           if (method === 'POST' && path === '/agent/fake-deploy') return reply(200, store.fakeDeploy(run.task_id, target((await body(req)).target)));
+          if (method === 'POST' && path === '/agent/task/status') {
+            const data = await body(req);
+            return reply(200, store.updateTaskStatus(run.task_id, taskStatus(data.status), text(data.note, 'note', 3000), run.id));
+          }
           throw problem(404, 'Agent route not found');
         }
         if (path === '/human/decisions' && method === 'POST') {
@@ -151,11 +163,19 @@ export async function startService({ home, agentDir, port = 8765, workerFactory 
           if (!store.project(text(data.projectId, 'projectId'))) throw problem(404, 'Project not found');
           return reply(201, store.createTask(data.projectId, text(data.title, 'title', 300), text(data.instructions, 'instructions')));
         }
-        const taskRoute = path.match(/^\/tasks\/([^/]+)(\/runs)?$/);
+        const taskRoute = path.match(/^\/tasks\/([^/]+)(\/(?:runs|status))?$/);
         if (taskRoute && method === 'GET' && !taskRoute[2]) return reply(200, context(taskRoute[1]));
-        if (taskRoute?.[2] && method === 'POST') {
+        if (taskRoute?.[2] === '/status' && method === 'POST') {
           const data = await body(req);
-          return reply(202, launch(taskRoute[1], text(data.provider, 'provider', 100), text(data.model, 'model', 200)));
+          // Local clients can update ordinary project state; an Agent credential keeps its real source.
+          const run = tokens.get(req.headers.authorization?.replace(/^Bearer /, ''));
+          if (run && run.task_id !== taskRoute[1]) throw problem(403, 'Run credential belongs to another task');
+          return reply(200, store.updateTaskStatus(taskRoute[1], taskStatus(data.status), text(data.note, 'note', 3000), run?.id));
+        }
+        if (taskRoute?.[2] === '/runs' && method === 'POST') {
+          const data = await body(req);
+          return reply(202, launch(taskRoute[1], text(data.provider, 'provider', 100), text(data.model, 'model', 200),
+            data.objective === undefined ? null : text(data.objective, 'objective', 6000)));
         }
         const runRoute = path.match(/^\/runs\/([^/]+)(\/stop)?$/);
         if (runRoute) {

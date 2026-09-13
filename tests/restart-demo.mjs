@@ -93,7 +93,10 @@ try {
   assert.equal(b.runtimeObservation.checkpointRead, first.checkpoint.id);
   const final = await call(`/tasks/${task.id}`);
   assert.equal(final.checkpoint.run_id, b.id);
-  assert.equal(final.task.status, 'in_progress');
+  if (final.task.status === 'done') {
+    assert.equal(final.task.status_update.source, 'agent');
+    assert.equal(final.task.status_update.runId, b.id);
+  } else assert.equal(final.task.status, 'in_progress');
   assert.ok(b.runtimeObservation.toolNames.some(name => ['powershell', 'bash'].includes(name)));
   assert.ok(b.runtimeObservation.toolNames.some(name => ['read', 'powershell', 'bash'].includes(name)));
   assert.deepEqual(['add.test.mjs', 'multiply.test.mjs'].map(file => readFileSync(join(repo, file), 'utf8')), originalTests);

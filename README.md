@@ -4,7 +4,7 @@ Project persists. Agents come and go.
 
 一个单机项目服务：SQLite 保存任务与 checkpoint，Pi 负责运行 Agent。新的 Pi session 从项目状态和实际 Git/worktree 接手，不恢复上一位 Agent 的 conversation。
 
-目前可以创建 Project/Task、启动一个工作回合、观察 Run、保存 checkpoint、停止服务并重新接手。具体的 `fake_deploy` 保留 `ASK / NO / GO`，只产生本地 SQLite 模拟记录。普通开发和协作不检查部署 Decision。
+目前可以创建 Project/Task、指定 Run 工作目标、观察运行、保存 checkpoint、显式更新 Task 状态、停止服务并重新接手。具体的 `fake_deploy` 保留 `ASK / NO / GO`，只产生本地 SQLite 模拟记录。普通开发和协作不检查部署 Decision。
 
 ## 运行
 
@@ -25,12 +25,23 @@ CLI 使用同一个 `--home` 找到服务地址；CLI 不直接写数据库。�
 node src/cli.mjs project create --name example --repo E:/my-project
 node src/cli.mjs task create --project PROJECT_ID --title "修复 parser" --instructions "检查路径处理，完成一个小改动，运行相关测试并写 checkpoint"
 node src/cli.mjs run --task TASK_ID --provider deepseek --model deepseek-flash
+# 可选：明确这次希望完成一个函数、一个功能，还是剩余可交付项
+node src/cli.mjs run --task TASK_ID --provider deepseek --model deepseek-flash --objective "完成剩余 CLI，运行完整测试，保存 checkpoint 并评估 Task 状态"
 node src/cli.mjs status --run RUN_ID
 node src/cli.mjs status --task TASK_ID
 node src/cli.mjs stop
 ```
 
-`run` 返回 Run ID，不等待整个模型回合。一个 Run 启动一个新的 Pi session；一次回合结束后服务关闭该 worker。Task 保持 `in_progress`，模型说“完成”或 `agent_end` 不会自动改变它。目前尚未提供 Task 状态编辑命令。
+`run` 返回 Run ID，不等待整个模型回合。一个 Run 启动一个新的 Pi session；一次回合结束后服务关闭该 worker。`--objective` 是可选的本次工作目标：随 Run 持久保存，并通过初始提示和 `read_task.currentRun` 提供给 worker；不修改整个 Task 的 instructions。未提供时，worker 根据项目状态选择下一项有用的增量。它仍受 Task 要求和运行时间上限约束，不是无限续跑开关，也不代替具体部署 Decision。
+
+Task 创建时为 `in_progress`。模型说“完成”、写 checkpoint、`agent_end` 或进程 exit 0 都不会自动改变它。Agent 可以通过 `update_task_status` 明确更新；CLI 可以这样操作：
+
+```powershell
+node src/cli.mjs task update --task TASK_ID --status done --note "已检查交付内容，相关测试通过"
+node src/cli.mjs task update --task TASK_ID --status in_progress --note "复核发现仍有一项未完成"
+```
+
+当前仅提供 `in_progress` / `done`，可随时按实际工作重新打开。服务保存最近一次更新的说明、时间，以及入口来源（`agent` + Run ID，或 `client`）。这是普通工作状态及提交者的判断；不表示独立验证成功或 Human acceptance。`client` 也不意味着已认证为 Human。Task 状态不会授予部署权限、终止现有 Run 或自动开启下一轮。
 
 当前 worker 仍采用小范围启动配置：显式加载 Threshold extension，关闭自动扩展、skills、prompt templates 和 AGENTS/CLAUDE 文件发现；本轮要求写在 Task 中。每个回合目前最多等待 3 分钟。这些是当前实现限制，不是跨 runtime contract，也不是完整日常开发客户端。
 
@@ -68,11 +79,13 @@ node src/cli.mjs decision --task TASK_ID --target staging --value allow
 | `src/service.mjs` | 本地 HTTP、Run 生命周期、具体 API 入口 |
 | `src/store.mjs` | 普通 SQL 与 migration；六张表 |
 | `src/pi.mjs` | Pi 进程/RPC/取消；不拥有模型循环 |
-| `src/extension.ts` | `read_task`、`save_checkpoint`、`fake_deploy` |
+| `src/extension.ts` | `read_task`、`save_checkpoint`、`update_task_status`、`fake_deploy` |
 | `src/git.mjs` | 按需 Git 读取 |
 | `src/cli.mjs` | 服务客户端与启动入口 |
 
 六张表是 `projects / tasks / runs / checkpoints / decisions / fake_deployments`。SQLite 使用 WAL、foreign keys、5 秒 busy timeout、`synchronous=FULL` 和短 transaction。模型、HTTP、Git 不在数据库 transaction 内执行。
+
+当前 schema v2 通过普通 migration 增加 Run objective 和 Task 最近状态更新 metadata。已有数据保留；旧 Run 的 objective 和旧 Task 的状态提交来源为空，不从历史摘要推断补填。没有新增表或完整状态变更账本。
 
 默认数据位于 `.local/threshold`，由一个服务独占写入。`server.lock` 防止同一数据目录开两个 writer。正常关闭会清理服务定位文件与锁；异常退出后的锁不会自动删除，应先检查记录的 PID、旧 worker 和现场，再清理精确的 stale lock。重新打开 DB 时，没有退出观察的旧 Run 标为 `unknown`，不会自动重放。
 
