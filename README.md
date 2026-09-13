@@ -4,7 +4,7 @@ Project persists. Agents come and go.
 
 一个单机项目服务：SQLite 保存任务与 checkpoint，Pi 负责运行 Agent。新的 Pi session 从项目状态和实际 Git/worktree 接手，不恢复上一位 Agent 的 conversation。
 
-目前可以创建 Project/Task、指定 Run 工作目标、观察运行、保存 checkpoint、显式更新 Task 状态、停止服务并重新接手。具体的 `fake_deploy` 保留 `ASK / NO / GO`，只产生本地 SQLite 模拟记录。普通开发和协作不检查部署 Decision。
+目前可以创建 Project/Task、指定 Run 工作目标、观察运行、保存 checkpoint、收发 Task 消息、显式更新 Task 状态、停止服务并重新接手。具体的 `fake_deploy` 保留 `ASK / NO / GO`，只产生本地 SQLite 模拟记录。普通开发和协作不检查部署 Decision。
 
 ## 运行
 
@@ -72,20 +72,37 @@ node src/cli.mjs decision --task TASK_ID --target staging --value allow
 
 这是本机可信用户服务，监听 `127.0.0.1`，不提供浏览器接口。普通管理接口没有多用户鉴权。**同 OS 用户的 shell 可读取 Human credential，因此这里的 API 入口分离不构成对同用户任意代码的安全隔离。** 不要把端口暴露到网络；加强宿主隔离是不同的部署需求。
 
+## Task 消息
+
+Agent 可以通过 `send_message` / `read_messages` 留下请求、review findings 或回复。接收范围就是当前 Task 的协作者；Task 归属确定 Project。消息没有父子 Agent、具名 recipient、线程或处理状态。
+
+```powershell
+node src/cli.mjs message send --task TASK_ID --body "请独立检查 CLI 的错误处理，发现与建议请留在这个 inbox。"
+node src/cli.mjs message read --task TASK_ID
+# 分页：将 ID 替换成上一页返回的 nextAfter
+node src/cli.mjs message read --task TASK_ID --after ID --limit 10
+```
+
+消息按递增 ID 返回，默认每页 10 条，最多 20 条，单条最多 6,000 字符。`hasMore` 表示还有下一页；`nextAfter` 只是调用者的读取位置。读取不消耗消息、不标记全局已读；新 session 从 0 开始，不会因别人读过而错过消息。服务不自动保存消费 cursor。
+
+`read_task` 仅附带 inbox 数量与最新 ID，正文按需读取，不自动塞进 checkpoint 或完整上下文。Agent 消息的 Task 和 from_run_id 由服务绑定真实 Run；JSON 声称其他来源不起作用。CLI 消息记录为 client/from_run_id=null，不代表 Human 授权。消息持久化后不会自动启动接收者、改变 Task 状态、创建 Decision 或执行受控操作。
+
+checkpoint 说明这轮工作停在哪里；message 传达给协作者的具体内容。回复可以在正文中引用消息 ID，暂不建立 request/acknowledge/close 流程。若发送响应丢失，应先读取 inbox 再决定是否重发；重复发送会新增一行，没有 exactly-once 承诺。
+
 ## 状态与实现
 
 | 模块 | 职责 |
 | --- | --- |
 | `src/service.mjs` | 本地 HTTP、Run 生命周期、具体 API 入口 |
-| `src/store.mjs` | 普通 SQL 与 migration；六张表 |
+| `src/store.mjs` | 普通 SQL 与 migration；七张表 |
 | `src/pi.mjs` | Pi 进程/RPC/取消；不拥有模型循环 |
-| `src/extension.ts` | `read_task`、`save_checkpoint`、`update_task_status`、`fake_deploy` |
+| `src/extension.ts` | 任务/checkpoint、显式状态、消息收发、`fake_deploy` |
 | `src/git.mjs` | 按需 Git 读取 |
 | `src/cli.mjs` | 服务客户端与启动入口 |
 
-六张表是 `projects / tasks / runs / checkpoints / decisions / fake_deployments`。SQLite 使用 WAL、foreign keys、5 秒 busy timeout、`synchronous=FULL` 和短 transaction。模型、HTTP、Git 不在数据库 transaction 内执行。
+七张表是 `projects / tasks / runs / checkpoints / decisions / fake_deployments / messages`。SQLite 使用 WAL、foreign keys、5 秒 busy timeout、`synchronous=FULL` 和短 transaction。模型、HTTP、Git 不在数据库 transaction 内执行。
 
-当前 schema v2 通过普通 migration 增加 Run objective 和 Task 最近状态更新 metadata。已有数据保留；旧 Run 的 objective 和旧 Task 的状态提交来源为空，不从历史摘要推断补填。没有新增表或完整状态变更账本。
+schema v2 增加 Run objective 和 Task 最近状态更新 metadata；当前 v3 增加 messages 表与 Task/ID 索引。已有数据保留；旧 Run 的 objective 和旧 Task 的状态提交来源为空，不从历史摘要推断补填。没有新增完整状态变更账本。
 
 默认数据位于 `.local/threshold`，由一个服务独占写入。`server.lock` 防止同一数据目录开两个 writer。正常关闭会清理服务定位文件与锁；异常退出后的锁不会自动删除，应先检查记录的 PID、旧 worker 和现场，再清理精确的 stale lock。重新打开 DB 时，没有退出观察的旧 Run 标为 `unknown`，不会自动重放。
 
@@ -103,6 +120,6 @@ npm run demo:restart
 
 真实演示在忽略的 `.local/restart-demo-*` 目录建立独立小型 Git 项目：A 实现 add 并保存下一步；服务进程正常退出；新服务、新 Pi session B 读取旧 checkpoint，检查项目并实现 multiply。演示脚本独立运行两个算术检查，并在该目录输出简短 `report.json`。这验证正常重启接手，不声称 crash recovery、远端 exactly-once、任意进程清理或模型总能正确完成任务。
 
-尚未实现 Message inbox、真实远端操作、自动重试/reconcile、多用户服务和完整客户端。这些不阻塞首条持久项目接手路径。
+尚未实现跨 Task/具名接收者消息、自动通知、真实远端操作、自动重试/reconcile、多用户服务和完整客户端。它们各自等待真实使用需求。
 
 架构方向见 [Working Architecture](docs/working-architecture.md)（参考，不是 freeze）。历史 A/B/C 观察保留在 [spikes](spikes/)，不自动等同于当前实现的验证结果。

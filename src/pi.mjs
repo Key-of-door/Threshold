@@ -8,7 +8,7 @@ export function startPi({ cwd, agentDir, provider, model, env, onEvent = () => {
   const extension = fileURLToPath(new URL('./extension.ts', import.meta.url));
   const child = spawn(process.execPath, [cli, '--mode', 'rpc', '--offline', '--no-extensions',
     '--no-skills', '--no-context-files', '--no-prompt-templates', '--no-themes', '--no-approve',
-    '--tools', 'read,write,edit,powershell,bash,read_task,save_checkpoint,update_task_status,fake_deploy',
+    '--tools', 'read,write,edit,powershell,bash,read_task,save_checkpoint,update_task_status,send_message,read_messages,fake_deploy',
     '--extension', extension, '--provider', provider, '--model', model, '--thinking', 'low',
     '--no-session'], { cwd, shell: false, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'],
     env: { ...process.env, ...env, PI_CODING_AGENT_DIR: agentDir, PI_TELEMETRY: '0' } });

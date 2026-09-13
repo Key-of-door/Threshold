@@ -6,7 +6,7 @@ export function openStore(path) {
   const db = new DatabaseSync(path);
   db.exec('PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000; PRAGMA synchronous=FULL;');
   const version = db.prepare('PRAGMA user_version').get().user_version;
-  if (version > 2) { db.close(); throw new Error('Database is newer than this service'); }
+  if (version > 3) { db.close(); throw new Error('Database is newer than this service'); }
   if (version === 0) db.exec(`BEGIN IMMEDIATE;
     CREATE TABLE projects (id TEXT PRIMARY KEY, name TEXT NOT NULL, repo_path TEXT NOT NULL UNIQUE, created_at TEXT NOT NULL);
     CREATE TABLE tasks (id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id), title TEXT NOT NULL, instructions TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'in_progress');
@@ -20,6 +20,10 @@ export function openStore(path) {
     ALTER TABLE runs ADD COLUMN objective TEXT;
     ALTER TABLE tasks ADD COLUMN status_update_json TEXT;
     PRAGMA user_version=2; COMMIT;`);
+  if (version < 3) db.exec(`BEGIN IMMEDIATE;
+    CREATE TABLE messages (id INTEGER PRIMARY KEY AUTOINCREMENT, task_id TEXT NOT NULL REFERENCES tasks(id), from_run_id TEXT REFERENCES runs(id), body TEXT NOT NULL, created_at TEXT NOT NULL);
+    CREATE INDEX messages_task ON messages(task_id,id);
+    PRAGMA user_version=3; COMMIT;`);
   db.prepare("UPDATE runs SET status='unknown', error='Service restarted without a process exit observation' WHERE status IN ('starting','running')").run();
   const requiredTask = id => {
     const task = db.prepare('SELECT * FROM tasks WHERE id=?').get(id);
@@ -53,7 +57,22 @@ export function openStore(path) {
       const checkpoint = db.prepare('SELECT * FROM checkpoints WHERE task_id=? ORDER BY rowid DESC LIMIT 1').get(id);
       return { task, project: this.project(task.project_id),
         checkpoint: checkpoint ? { ...checkpoint, source: 'agent_summary', git: JSON.parse(checkpoint.git_json), git_json: undefined } : null,
-        recentRuns: db.prepare('SELECT * FROM runs WHERE task_id=? ORDER BY rowid DESC LIMIT 5').all(id) };
+        recentRuns: db.prepare('SELECT * FROM runs WHERE task_id=? ORDER BY rowid DESC LIMIT 5').all(id),
+        messageInbox: { scope: 'task', ...db.prepare('SELECT COUNT(*) AS count, COALESCE(MAX(id),0) AS latestId FROM messages WHERE task_id=?').get(id) } };
+    },
+    sendMessage(taskId, body, runId = null) {
+      const task = requiredTask(taskId);
+      if (runId && this.run(runId)?.task_id !== taskId) throw Object.assign(new Error('Run belongs to another task'), { status: 403 });
+      const created_at = now();
+      const { lastInsertRowid } = db.prepare('INSERT INTO messages(task_id,from_run_id,body,created_at) VALUES (?,?,?,?)').run(taskId, runId, body, created_at);
+      return { id: Number(lastInsertRowid), project_id: task.project_id, task_id: taskId, from_run_id: runId,
+        source: runId ? 'agent' : 'client', body, created_at };
+    },
+    readMessages(taskId, after = 0, limit = 10) {
+      const task = requiredTask(taskId);
+      const rows = db.prepare('SELECT * FROM messages WHERE task_id=? AND id>? ORDER BY id LIMIT ?').all(taskId, after, limit + 1);
+      const messages = rows.slice(0, limit).map(row => ({ ...row, project_id: task.project_id, source: row.from_run_id ? 'agent' : 'client' }));
+      return { scope: 'task', taskId, messages, nextAfter: messages.at(-1)?.id ?? after, hasMore: rows.length > limit };
     },
     checkpoint(taskId, runId, summary, git) {
       requiredTask(taskId);

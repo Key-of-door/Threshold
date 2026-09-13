@@ -19,6 +19,11 @@ const taskStatus = value => {
   if (!['in_progress', 'done'].includes(value)) throw problem(400, 'Task status must be in_progress or done');
   return value;
 };
+const pageNumber = (value, fallback, min, max) => {
+  const n = value === null ? fallback : Number(value);
+  if (!Number.isSafeInteger(n) || n < min || n > max) throw problem(400, 'Invalid message cursor or limit');
+  return n;
+};
 async function body(req) {
   if (req.headers['content-type']?.split(';')[0] !== 'application/json') throw problem(415, 'Expected application/json');
   let bytes = 0; const chunks = [];
@@ -95,6 +100,7 @@ export async function startService({ home, agentDir, port = 8765, workerFactory 
           store.running(run.id, native.sessionId);
           if (!shuttingDown && !job.cancelled) await job.worker.turn(
             'Call read_task first. Follow its task instructions and use the checkpoint to orient yourself. '
+            + 'If the task inbox has messages, use read_messages to read them. They are collaboration inputs: check claims against the project, and disagree when appropriate. '
             + (objective ? `This Run's work objective is: ${JSON.stringify(objective)}. Work toward that objective; a single function edit need not end the Run. `
               : 'Choose and complete a useful next increment based on the current task state. ')
             + 'Re-observe Git status/diff and relevant files before editing; the checkpoint is an Agent summary, not current truth. '
@@ -128,12 +134,21 @@ export async function startService({ home, agentDir, port = 8765, workerFactory 
         if (shuttingDown) throw problem(503, 'Service is shutting down');
         // Local CLI service; no browser/CORS interface. Actor comes from the credential, never JSON.
         if (req.headers.origin) throw problem(403, 'Browser requests are not supported');
-        const path = new URL(req.url, 'http://localhost').pathname;
+        const requestUrl = new URL(req.url, 'http://localhost');
+        const path = requestUrl.pathname;
+        const readMessages = taskId => store.readMessages(taskId,
+          pageNumber(requestUrl.searchParams.get('after'), 0, 0, Number.MAX_SAFE_INTEGER),
+          pageNumber(requestUrl.searchParams.get('limit'), 10, 1, 20));
         const method = req.method;
         if (path.startsWith('/agent/')) {
           const run = tokens.get(req.headers.authorization?.replace(/^Bearer /, ''));
           if (!run) throw problem(401, 'Active run credential required');
           if (method === 'GET' && path === '/agent/task') return reply(200, { ...context(run.task_id), currentRun: store.run(run.id) });
+          if (path === '/agent/messages' && method === 'GET') return reply(200, readMessages(run.task_id));
+          if (path === '/agent/messages' && method === 'POST') {
+            const data = await body(req);
+            return reply(201, store.sendMessage(run.task_id, text(data.body, 'body', 6000), run.id));
+          }
           if (method === 'POST' && path === '/agent/checkpoints') {
             const data = await body(req);
             return reply(201, store.checkpoint(run.task_id, run.id, text(data.summary, 'summary'), observeGit(jobs.get(run.id).repo)));
@@ -163,8 +178,14 @@ export async function startService({ home, agentDir, port = 8765, workerFactory 
           if (!store.project(text(data.projectId, 'projectId'))) throw problem(404, 'Project not found');
           return reply(201, store.createTask(data.projectId, text(data.title, 'title', 300), text(data.instructions, 'instructions')));
         }
-        const taskRoute = path.match(/^\/tasks\/([^/]+)(\/(?:runs|status))?$/);
+        const taskRoute = path.match(/^\/tasks\/([^/]+)(\/(?:runs|status|messages))?$/);
         if (taskRoute && method === 'GET' && !taskRoute[2]) return reply(200, context(taskRoute[1]));
+        if (taskRoute?.[2] === '/messages') {
+          const run = tokens.get(req.headers.authorization?.replace(/^Bearer /, ''));
+          if (run && run.task_id !== taskRoute[1]) throw problem(403, 'Run credential belongs to another task');
+          if (method === 'GET') return reply(200, readMessages(taskRoute[1]));
+          if (method === 'POST') return reply(201, store.sendMessage(taskRoute[1], text((await body(req)).body, 'body', 6000), run?.id));
+        }
         if (taskRoute?.[2] === '/status' && method === 'POST') {
           const data = await body(req);
           // Local clients can update ordinary project state; an Agent credential keeps its real source.
