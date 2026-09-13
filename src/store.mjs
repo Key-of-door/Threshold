@@ -6,7 +6,7 @@ export function openStore(path) {
   const db = new DatabaseSync(path);
   db.exec('PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000; PRAGMA synchronous=FULL;');
   const version = db.prepare('PRAGMA user_version').get().user_version;
-  if (version > 4) { db.close(); throw new Error('Database is newer than this service'); }
+  if (version > 5) { db.close(); throw new Error('Database is newer than this service'); }
   if (version === 0) db.exec(`BEGIN IMMEDIATE;
     CREATE TABLE projects (id TEXT PRIMARY KEY, name TEXT NOT NULL, repo_path TEXT NOT NULL UNIQUE, created_at TEXT NOT NULL);
     CREATE TABLE tasks (id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id), title TEXT NOT NULL, instructions TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'in_progress');
@@ -27,6 +27,11 @@ export function openStore(path) {
   if (version < 4) db.exec(`BEGIN IMMEDIATE;
     ALTER TABLE runs ADD COLUMN capabilities_json TEXT;
     PRAGMA user_version=4; COMMIT;`);
+  if (version < 5) db.exec(`BEGIN IMMEDIATE;
+    ALTER TABLE runs ADD COLUMN workspace_path TEXT;
+    ALTER TABLE runs ADD COLUMN started_by_run_id TEXT REFERENCES runs(id);
+    UPDATE runs SET workspace_path=(SELECT p.repo_path FROM tasks t JOIN projects p ON p.id=t.project_id WHERE t.id=runs.task_id);
+    PRAGMA user_version=5; COMMIT;`);
   const readRun = row => row ? { ...row, capabilities: row.capabilities_json ? JSON.parse(row.capabilities_json) : null, capabilities_json: undefined } : undefined;
   db.prepare("UPDATE runs SET status='unknown', error='Service restarted without a process exit observation' WHERE status IN ('starting','running')").run();
   const requiredTask = id => {
@@ -84,11 +89,29 @@ export function openStore(path) {
       db.prepare('INSERT INTO checkpoints VALUES (?,?,?,?,?,?)').run(checkpoint.id, taskId, runId, summary, JSON.stringify(git), checkpoint.created_at);
       return checkpoint;
     },
-    startRun(taskId, provider, model, objective = null, capabilities = { skills: [], extensions: [] }) {
-      requiredTask(taskId);
+    startRun(taskId, provider, model, objective = null, capabilities = { skills: [], extensions: [] }, workspacePath, startedBy = null) {
+      const task = requiredTask(taskId);
       const id = randomUUID();
-      db.prepare("INSERT INTO runs(id,task_id,provider,model,status,started_at,objective,capabilities_json) VALUES (?,?,?,?,'starting',?,?,?)").run(id, taskId, provider, model, now(), objective, JSON.stringify(capabilities));
+      db.prepare("INSERT INTO runs(id,task_id,provider,model,status,started_at,objective,capabilities_json,workspace_path,started_by_run_id) VALUES (?,?,?,?,'starting',?,?,?,?,?)").run(id, taskId, provider, model, now(), objective, JSON.stringify(capabilities), workspacePath ?? this.project(task.project_id).repo_path, startedBy);
       return this.run(id);
+    },
+    runCount: () => db.prepare('SELECT COUNT(*) AS n FROM runs').get().n,
+    unsettledRuns: () => db.prepare("SELECT * FROM runs WHERE status IN ('starting','running','unknown')").all().map(readRun),
+    board(projectId) {
+      const project = this.project(projectId);
+      if (!project) throw Object.assign(new Error('Project not found'), { status: 404 });
+      const clip = value => value && value.slice(0, 500);
+      return { project, tasks: db.prepare('SELECT id FROM tasks WHERE project_id=? ORDER BY rowid DESC').all(projectId).map(({ id }) => {
+        const { task, checkpoint, recentRuns, messageInbox } = this.context(id);
+        const messages = db.prepare('SELECT id,from_run_id,body,created_at FROM messages WHERE task_id=? ORDER BY id DESC LIMIT 3').all(id);
+        const briefRun = run => ({ id: run.id, status: run.status, objective: clip(run.objective), workspace_path: run.workspace_path,
+          started_at: run.started_at, ended_at: run.ended_at, error: run.error, started_by_run_id: run.started_by_run_id });
+        return { id, title: task.title, status: task.status, status_update: task.status_update,
+          unsettledRuns: db.prepare("SELECT * FROM runs WHERE task_id=? AND status IN ('starting','running','unknown')").all(id).map(readRun).map(briefRun),
+          latestRun: recentRuns[0] ? briefRun(recentRuns[0]) : null,
+          checkpoint: checkpoint ? { id: checkpoint.id, run_id: checkpoint.run_id, source: checkpoint.source, summary: clip(checkpoint.summary), created_at: checkpoint.created_at } : null,
+          messageInbox, recentMessages: messages.map(message => ({ ...message, body: clip(message.body), source: message.from_run_id ? 'agent' : 'client' })) };
+      }), summariesTruncatedAt: 500 };
     },
     run: id => readRun(db.prepare('SELECT * FROM runs WHERE id=?').get(id)),
     running(id, sessionId) { db.prepare("UPDATE runs SET status='running',session_id=? WHERE id=?").run(sessionId, id); },

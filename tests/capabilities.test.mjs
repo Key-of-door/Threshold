@@ -21,12 +21,13 @@ function setup() {
 }
 const probe = resolve('tests/fixtures/capability-probe.ts');
 const hello = resolve('node_modules/@earendil-works/pi-coding-agent/examples/extensions/hello.ts');
+const scheduler = resolve('src/scheduler.ts');
 
 test('real Pi: explicit skills/extensions compose; discovered settings stay off; next session starts empty', async () => {
   const { home, a, b, dormant } = setup();
   writeFileSync(join(home, 'settings.json'), JSON.stringify({ skills: [dormant], extensions: [hello] }));
   const sessions = new Set();
-  for (const [skills, extensions] of [[[a], [hello]], [[b], []], [[a, b], [hello]], [[], []]]) {
+  for (const [skills, extensions] of [[[a], [hello, scheduler]], [[b], []], [[a, b], [hello]], [[], []]]) {
     const pi = startPi({ cwd: home, agentDir: home, provider: 'fixture', model: 'fixture',
       capabilities: selectCapabilities(skills, [...extensions, probe]) });
     try {
@@ -38,6 +39,8 @@ test('real Pi: explicit skills/extensions compose; discovered settings stay off;
       const observed = JSON.parse(messages.find(m => m.customType === 'capability-probe').content);
       assert.equal(observed.tools.includes('hello'), extensions.includes(hello));
       assert.ok(observed.tools.includes('read_task'));
+      assert.ok(observed.tools.includes('read_project_board'));
+      assert.equal(observed.tools.includes('start_run'), extensions.includes(scheduler));
       assert.ok(!observed.systemPrompt.includes('dormant-sample'));
       assert.ok(!observed.systemPrompt.includes('Body marker'), 'discovery does not load skill body');
       assert.equal(observed.systemPrompt.includes('review-sample'), skills.includes(a));

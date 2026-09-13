@@ -17,6 +17,9 @@ export default function (pi: ExtensionAPI) {
   }
   pi.registerTool({ name: 'read_task', label: 'Read task', description: 'Read persistent task/status assessment, current Run objective, latest Agent checkpoint, recent runs and a fresh Git observation. Recheck relevant files and Git before continuing; checkpoint is a summary.',
     parameters: Type.Object({}), execute: (_id, _params, signal) => call('/agent/task', signal) });
+  pi.registerTool({ name: 'read_project_board', label: 'Project board', description: 'Read a compact Project view: Task assessments, unsettled/latest Runs, workspace paths, checkpoint/message previews and service Run limits. No separate Board status. Supply taskId for full task/checkpoint and paged messages; inspect_run or Git for another workspace reality. Summaries are claims to check.',
+    parameters: Type.Object({ taskId: Type.Optional(Type.String()), after: Type.Optional(Type.Integer({ minimum: 0 })) }),
+    execute: (_id, params, signal) => call(`/agent/project/board${params.taskId ? `?taskId=${encodeURIComponent(params.taskId)}&after=${params.after ?? 0}&limit=20` : ''}`, signal) });
   pi.registerTool({ name: 'save_checkpoint', label: 'Save checkpoint', description: 'Append a meaningful work summary with test observations, open issues and next step. Does not complete the Task. If a write response is lost, read_task before retrying.',
     parameters: Type.Object({ summary: Type.String({ minLength: 1, maxLength: 12000 }) }),
     execute: (_id, params, signal) => call('/agent/checkpoints', signal, { summary: params.summary }) });

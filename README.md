@@ -109,6 +109,28 @@ Skill 注册进 Pi catalog 与正文被模型读取是两件事。服务检查�
 
 本轮研究、样本与真实 F/G 观察见 [Per-Run capabilities](docs/per-run-capabilities.md)。
 
+## Project Board 与可替换调度者
+
+```powershell
+node src/cli.mjs board --project PROJECT_ID
+# 一个普通 Run 显式选择调度能力；不产生 Manager 身份。
+node src/cli.mjs run --task TASK_ID --provider deepseek --model deepseek-flash --skill capabilities/project-scheduler --extension src/scheduler.ts --objective "读取 Board，安排独立工作并留下接手说明"
+# worktree 由普通 Git 创建；同一 Project 中的 Run 可以选择不同工作目录。
+node src/cli.mjs run --task TASK_ID --provider deepseek --model deepseek-flash --workspace E:/worktrees/example
+```
+
+所有 worker 都有 `read_project_board`：默认聚合 Task 状态、未确定退出及最近 Run、workspace、checkpoint 和最近三条消息的简短预览。预览最多 500 字符，Task assessment 与 Run execution 分开展示，不推导新的 running/waiting/done 状态。传 `taskId` 可读取完整 Task/checkpoint、最近 Runs（含 capabilities）和分页消息；传 `after` 继续消息分页。Git 观察注明实际目录，历史 checkpoint 不是新观察。
+
+显式加载本服务的 `src/scheduler.ts` 才提供 `create_task`、`start_run`、`inspect_run` 工具。服务按真实 Run 绑定 Project 和启动来源，限定这些 Agent 入口访问当前 Project；`started_by_run_id` 只是来源记录，不是父子身份。新 worker 默认不继承 capability。调度不签发 Human Decision，消息也不授予部署权限。
+
+`start_run` 指定已存在的 Task、objective 和绝对 worktree 路径，默认沿用调用者 provider/model。服务确认目录是同一 Git repository 的 worktree root。Run 的执行、checkpoint Git 和工作目录占用检查使用该目录。并发隔离限于本服务管理的 writer；不隔离共享 Git refs、任意同用户进程或外部服务。
+
+启动后 worker 由服务管理：scheduler session 结束不会取消它们，新 scheduler 可读取 Board 接手。关闭 service 仍会停止全部 managed workers；此能力不代表进程故障恢复。启动响应丢失时先查 Board/Run，再决定是否重试，不自动重复启动。
+
+服务默认 `--max-parallel-runs 3 --max-runs 100`。前者包含 scheduler 和 unknown exit；后者计算**该 home 中全部历史 Run**，所有 Project、CLI 和调度入口共享，失败的启动后运行也计数，替换 scheduler 或重启不会清零。操作者可显式调整服务配置。达到限制返回 HTTP 429 technical/resource error，不创建 Run，也不转成 ASK。Board 显示计数和剩余额度。
+
+这些是 managed launch 资源限制，不是 token/金额上限或同用户任意 shell 的 sandbox。未加载扩展意味着没有对应工具，不代表同用户无法调用普通客户端入口；普通入口同样经过资源检查。未知退出占用工作目录和额度，需实际排查旧进程，当前没有自动清理未知状态的接口。
+
 ## 状态与实现
 
 | 模块 | 职责 |
@@ -118,12 +140,13 @@ Skill 注册进 Pi catalog 与正文被模型读取是两件事。服务检查�
 | `src/pi.mjs` | Pi 进程/RPC/取消；不拥有模型循环 |
 | `src/capabilities.mjs` | 本地入口文件选择与调试用哈希 |
 | `src/extension.ts` | 任务/checkpoint、显式状态、消息收发、`fake_deploy` |
+| `src/scheduler.ts` | 显式选中的 Task/Run 调度工具；不拥有 worker 进程 |
 | `src/git.mjs` | 按需 Git 读取 |
 | `src/cli.mjs` | 服务客户端与启动入口 |
 
 七张表是 `projects / tasks / runs / checkpoints / decisions / fake_deployments / messages`。SQLite 使用 WAL、foreign keys、5 秒 busy timeout、`synchronous=FULL` 和短 transaction。模型、HTTP、Git 不在数据库 transaction 内执行。
 
-schema v2 增加 Run objective 和 Task 最近状态更新 metadata；v3 增加 messages 表与 Task/ID 索引；当前 v4 仅给 Run 增加 capabilities JSON 字段。已有数据保留；历史字段未知时保持空值，不从摘要推断补填。没有新增完整状态变更账本或 capability registry 表。
+schema v2 增加 Run objective 和 Task 最近状态更新 metadata；v3 增加 messages；v4 增加 Run capabilities；v5 增加 Run workspace_path 和 started_by_run_id。旧版本 Run 始终在 Project.repo_path 执行，迁移据此填入目录；旧启动来源保持 null。没有新增 Board、Workspace、Scheduler 表或 capability registry。
 
 默认数据位于 `.local/threshold`，由一个服务独占写入。`server.lock` 防止同一数据目录开两个 writer。正常关闭会清理服务定位文件与锁；异常退出后的锁不会自动删除，应先检查记录的 PID、旧 worker 和现场，再清理精确的 stale lock。重新打开 DB 时，没有退出观察的旧 Run 标为 `unknown`，不会自动重放。
 

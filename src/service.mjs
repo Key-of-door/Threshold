@@ -2,8 +2,9 @@ import { createServer } from 'node:http';
 import { randomBytes } from 'node:crypto';
 import { mkdirSync, openSync, closeSync, readFileSync, writeFileSync, unlinkSync, realpathSync } from 'node:fs';
 import { resolve, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { openStore } from './store.mjs';
-import { git, observeGit } from './git.mjs';
+import { git, observeGit, worktreePath } from './git.mjs';
 import { startPi } from './pi.mjs';
 import { selectCapabilities } from './capabilities.mjs';
 
@@ -41,7 +42,8 @@ async function body(req) {
 }
 
 // Single local service, explicit routes, one DB writer. No generic operation dispatcher.
-export async function startService({ home, agentDir, port = 8765, workerFactory = startPi }) {
+export async function startService({ home, agentDir, port = 8765, workerFactory = startPi, maxParallelRuns = 3, maxRuns = 100 }) {
+  for (const n of [maxParallelRuns, maxRuns]) if (!Number.isSafeInteger(n) || n < 1) throw new Error('Run limits must be positive integers');
   home = resolve(home); agentDir = resolve(agentDir);
   mkdirSync(home, { recursive: true });
   const lockPath = join(home, 'server.lock');
@@ -66,20 +68,40 @@ export async function startService({ home, agentDir, port = 8765, workerFactory 
     }
     if (!/^[a-f0-9]{64}$/.test(humanKey)) throw new Error('Invalid Human client credential file');
     store = openStore(join(home, 'project.sqlite'));
-    const context = taskId => {
+    const context = (taskId, workspace) => {
       const state = store.context(taskId);
-      return { ...state, currentGit: observeGit(state.project.repo_path), controlled: store.controlledState(taskId) };
+      const path = workspace ?? state.project.repo_path;
+      return { ...state, currentGit: { ...observeGit(path), workspace_path: path }, controlled: store.controlledState(taskId) };
     };
-    function launch(taskId, provider, model, objective, skills, extensions) {
+    const resources = () => ({ scope: 'all Runs in this service home, including history', maxParallelRuns, maxRuns,
+      unsettled: store.unsettledRuns().length, started: store.runCount(), remainingStarts: Math.max(0, maxRuns - store.runCount()) });
+    const board = projectId => ({ ...store.board(projectId), resources: resources() });
+    const sameProjectTask = (run, taskId) => {
+      if (store.task(taskId).project_id !== store.task(run.task_id).project_id) throw problem(403, 'Task belongs to another Project');
+      return taskId;
+    };
+    const schedulerPath = realpathSync(fileURLToPath(new URL('./scheduler.ts', import.meta.url)));
+    const requireScheduler = run => {
+      if (!store.run(run.id).capabilities?.extensions.some(file => file.path === schedulerPath))
+        throw problem(403, 'Select the scheduler extension for this Run');
+    };
+    function launch(taskId, provider, model, objective, skills, extensions, workspace, startedBy = null) {
       const state = store.context(taskId);
-      if ([...jobs.values()].some(job => job.active && job.repo === state.project.repo_path))
-        throw problem(409, 'A worker is already active in this worktree; use another Git worktree for parallel writing');
+      let repo;
+      try { repo = worktreePath(state.project.repo_path, workspace); }
+      catch { throw problem(400, 'Workspace must be a worktree root of the Project Git repository'); }
+      const unsettled = store.unsettledRuns();
+      if (unsettled.some(run => run.workspace_path === repo))
+        throw problem(409, 'A worker is active or its exit is unknown in this worktree; inspect it or use another worktree');
+      if (unsettled.length >= maxParallelRuns) throw problem(429, 'Parallel Run limit reached (including unknown exits); no Run started');
+      if (store.runCount() >= maxRuns) throw problem(429, 'Cumulative Run limit reached for this service home; no Run started');
       let capabilities;
       try { capabilities = selectCapabilities(skills, extensions); }
       catch { throw problem(400, 'Invalid capability selection: use existing absolute local skill or extension file paths'); }
-      const run = store.startRun(taskId, provider, model, objective, capabilities);
+      // No await between resource checks and the durable insert; all launch routes share this path.
+      const run = store.startRun(taskId, provider, model, objective, capabilities, repo, startedBy);
       const token = randomBytes(32).toString('hex');
-      const job = { active: true, repo: state.project.repo_path, worker: null, done: null,
+      const job = { active: true, repo, worker: null, done: null,
         observation: { source: 'runtime_events_in_memory', toolCalls: 0, toolNames: [], checkpointRead: null, agentEnd: false } };
       jobs.set(run.id, job); tokens.set(token, run);
       job.done = (async () => {
@@ -155,7 +177,33 @@ export async function startService({ home, agentDir, port = 8765, workerFactory 
         if (path.startsWith('/agent/')) {
           const run = tokens.get(req.headers.authorization?.replace(/^Bearer /, ''));
           if (!run) throw problem(401, 'Active run credential required');
-          if (method === 'GET' && path === '/agent/task') return reply(200, { ...context(run.task_id), currentRun: store.run(run.id) });
+          if (method === 'GET' && path === '/agent/task') return reply(200, { ...context(run.task_id, run.workspace_path), currentRun: store.run(run.id) });
+          if (method === 'GET' && path === '/agent/project/board') {
+            const taskId = requestUrl.searchParams.get('taskId');
+            if (taskId) {
+              sameProjectTask(run, taskId);
+              return reply(200, { ...context(taskId, taskId === run.task_id ? run.workspace_path : undefined), messages: readMessages(taskId) });
+            }
+            return reply(200, board(store.task(run.task_id).project_id));
+          }
+          if (method === 'POST' && path === '/agent/project/tasks') {
+            requireScheduler(run); const data = await body(req);
+            return reply(201, store.createTask(store.task(run.task_id).project_id, text(data.title, 'title', 300), text(data.instructions, 'instructions')));
+          }
+          if (method === 'POST' && path === '/agent/project/runs') {
+            requireScheduler(run); const data = await body(req);
+            const taskId = sameProjectTask(run, text(data.taskId, 'taskId'));
+            return reply(202, launch(taskId, data.provider === undefined ? run.provider : text(data.provider, 'provider', 100),
+              data.model === undefined ? run.model : text(data.model, 'model', 200),
+              text(data.objective, 'objective', 6000), data.skills, data.extensions, text(data.workspacePath, 'workspacePath'), run.id));
+          }
+          const projectRun = path.match(/^\/agent\/project\/runs\/([^/]+)$/);
+          if (method === 'GET' && projectRun) {
+            const selected = store.run(projectRun[1]);
+            if (!selected) throw problem(404, 'Run not found');
+            sameProjectTask(run, selected.task_id);
+            return reply(200, { ...selected, currentGit: { ...observeGit(selected.workspace_path), workspace_path: selected.workspace_path }, runtimeObservation: jobs.get(selected.id)?.observation });
+          }
           if (path === '/agent/messages' && method === 'GET') return reply(200, readMessages(run.task_id));
           if (path === '/agent/messages' && method === 'POST') {
             const data = await body(req);
@@ -179,6 +227,8 @@ export async function startService({ home, agentDir, port = 8765, workerFactory 
           return reply(200, store.decide(text(data.taskId, 'taskId'), target(data.target), data.decision));
         }
         if (method === 'GET' && path === '/status') return reply(200, { projects: store.projects(), tasks: store.tasks() });
+        const projectBoard = path.match(/^\/projects\/([^/]+)\/board$/);
+        if (method === 'GET' && projectBoard) return reply(200, board(projectBoard[1]));
         if (method === 'POST' && path === '/projects') {
           const data = await body(req);
           const repo = realpathSync(text(data.repoPath, 'repoPath'));
@@ -207,8 +257,10 @@ export async function startService({ home, agentDir, port = 8765, workerFactory 
         }
         if (taskRoute?.[2] === '/runs' && method === 'POST') {
           const data = await body(req);
+          const run = tokens.get(req.headers.authorization?.replace(/^Bearer /, ''));
+          if (run) { requireScheduler(run); sameProjectTask(run, taskRoute[1]); }
           return reply(202, launch(taskRoute[1], text(data.provider, 'provider', 100), text(data.model, 'model', 200),
-            data.objective === undefined ? null : text(data.objective, 'objective', 6000), data.skills, data.extensions));
+            data.objective === undefined ? null : text(data.objective, 'objective', 6000), data.skills, data.extensions, data.workspacePath, run?.id));
         }
         const runRoute = path.match(/^\/runs\/([^/]+)(\/stop)?$/);
         if (runRoute) {
