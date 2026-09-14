@@ -2,12 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
 import { git } from '../src/git.mjs';
 import { startService } from '../src/service.mjs';
 import { openStore } from '../src/store.mjs';
 
-const scheduler = resolve('src/scheduler.ts');
 function setup() {
   const home = mkdtempSync(join(tmpdir(), 'threshold-scheduling-')), repo = join(home, 'repo');
   git(home, 'init', repo); git(repo, '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '--allow-empty', '-m', 'seed');
@@ -44,7 +43,7 @@ test('peers use distinct worktrees, retain workers after scheduler exits, and a 
   const call = client(service);
   try {
     const { project, task } = await create(call, env.repo);
-    const s1 = (await call(`/tasks/${task.id}/runs`, { ...normal, extensions: [scheduler] })).data;
+    const s1 = (await call(`/tasks/${task.id}/runs`, normal)).data;
     const key = env.workers[0].key;
     const a = (await call('/agent/project/tasks', { title: 'A', instructions: 'Implement A', projectId: 'forged' }, key)).data;
     const b = (await call('/agent/project/tasks', { title: 'B', instructions: 'Implement B' }, key)).data;
@@ -58,7 +57,10 @@ test('peers use distinct worktrees, retain workers after scheduler exits, and a 
     assert.deepEqual(ra.data.capabilities, { skills: [], extensions: [] });
     assert.deepEqual(env.workers.slice(1).map(worker => worker.cwd).sort(), [env.a, env.b].sort());
     const workerKey = env.workers.find(worker => worker.cwd === env.a).key;
-    assert.equal((await call('/agent/project/tasks', { title: 'Unexpected', instructions: 'No scheduler selected' }, workerKey)).status, 403);
+    // Ordinary Project API: no file identity or scheduler-role check. Tool exposure belongs to the extension.
+    const ordinaryTask = await call('/agent/project/tasks', { title: 'Another task', instructions: 'Ordinary project API' }, workerKey);
+    assert.equal(ordinaryTask.status, 201);
+    assert.equal(ordinaryTask.data.project_id, project.id);
     assert.equal((await call('/human/decisions', { taskId: a.id, target: 'staging', decision: 'allow' }, key)).status, 401);
     assert.equal((await call('/agent/fake-deploy', { target: 'staging' }, workerKey)).data.status, 'ASK');
     const other = await create(call, env.a);
@@ -71,7 +73,7 @@ test('peers use distinct worktrees, retain workers after scheduler exits, and a 
     assert.match(state.checkpoint.git.status, /only-a/);
     await call(`/runs/${s1.id}/stop`, {});
     assert.equal((await call(`/runs/${ra.data.id}`)).data.status, 'running');
-    const s2 = (await call(`/tasks/${task.id}/runs`, { ...normal, extensions: [scheduler] })).data;
+    const s2 = (await call(`/tasks/${task.id}/runs`, normal)).data;
     const nextKey = env.workers[3].key;
     assert.notEqual(s2.id, s1.id);
     const board = (await call('/agent/project/board', undefined, nextKey)).data;
@@ -90,7 +92,7 @@ test('all launch routes share concurrent and durable cumulative limits; invalid 
   let call = client(service);
   try {
     const { project, task } = await create(call, env.repo);
-    const s = (await call(`/tasks/${task.id}/runs`, { ...normal, extensions: [scheduler] })).data;
+    const s = (await call(`/tasks/${task.id}/runs`, normal)).data;
     const key = env.workers[0].key;
     const foreign = join(env.home, 'foreign'); git(env.home, 'init', foreign);
     assert.equal((await call(`/tasks/${task.id}/runs`, { ...normal, workspacePath: foreign })).status, 400);

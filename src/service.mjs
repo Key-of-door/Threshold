@@ -2,7 +2,6 @@ import { createServer } from 'node:http';
 import { randomBytes } from 'node:crypto';
 import { mkdirSync, openSync, closeSync, readFileSync, writeFileSync, unlinkSync, realpathSync } from 'node:fs';
 import { resolve, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { openStore } from './store.mjs';
 import { git, observeGit, worktreePath } from './git.mjs';
 import { startPi } from './pi.mjs';
@@ -79,11 +78,6 @@ export async function startService({ home, agentDir, port = 8765, workerFactory 
     const sameProjectTask = (run, taskId) => {
       if (store.task(taskId).project_id !== store.task(run.task_id).project_id) throw problem(403, 'Task belongs to another Project');
       return taskId;
-    };
-    const schedulerPath = realpathSync(fileURLToPath(new URL('./scheduler.ts', import.meta.url)));
-    const requireScheduler = run => {
-      if (!store.run(run.id).capabilities?.extensions.some(file => file.path === schedulerPath))
-        throw problem(403, 'Select the scheduler extension for this Run');
     };
     function launch(taskId, provider, model, objective, skills, extensions, workspace, startedBy = null) {
       const state = store.context(taskId);
@@ -187,11 +181,11 @@ export async function startService({ home, agentDir, port = 8765, workerFactory 
             return reply(200, board(store.task(run.task_id).project_id));
           }
           if (method === 'POST' && path === '/agent/project/tasks') {
-            requireScheduler(run); const data = await body(req);
+            const data = await body(req);
             return reply(201, store.createTask(store.task(run.task_id).project_id, text(data.title, 'title', 300), text(data.instructions, 'instructions')));
           }
           if (method === 'POST' && path === '/agent/project/runs') {
-            requireScheduler(run); const data = await body(req);
+            const data = await body(req);
             const taskId = sameProjectTask(run, text(data.taskId, 'taskId'));
             return reply(202, launch(taskId, data.provider === undefined ? run.provider : text(data.provider, 'provider', 100),
               data.model === undefined ? run.model : text(data.model, 'model', 200),
@@ -259,7 +253,7 @@ export async function startService({ home, agentDir, port = 8765, workerFactory 
         if (taskRoute?.[2] === '/runs' && method === 'POST') {
           const data = await body(req);
           const run = tokens.get(req.headers.authorization?.replace(/^Bearer /, ''));
-          if (run) { requireScheduler(run); sameProjectTask(run, taskRoute[1]); }
+          if (run) sameProjectTask(run, taskRoute[1]);
           return reply(202, launch(taskRoute[1], text(data.provider, 'provider', 100), text(data.model, 'model', 200),
             data.objective === undefined ? null : text(data.objective, 'objective', 6000), data.skills, data.extensions, data.workspacePath, run?.id));
         }

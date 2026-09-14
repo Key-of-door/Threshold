@@ -118,14 +118,14 @@ node src/cli.mjs board --project PROJECT_ID
 # 同一 --summary 也适用于 board：紧凑列出 Task 状态、最新 Run 与 checkpoint 首行
 node src/cli.mjs board --project PROJECT_ID --summary
 # 一个普通 Run 显式选择调度能力；不产生 Manager 身份。
-node src/cli.mjs run --task TASK_ID --provider deepseek --model deepseek-flash --skill capabilities/project-scheduler --extension src/scheduler.ts --objective "读取 Board，安排独立工作并留下接手说明"
+node src/cli.mjs run --task TASK_ID --provider deepseek --model deepseek-flash --skill E:/Threshold-capability/skills/project-scheduler --extension E:/Threshold-capability/extensions/scheduler.ts --objective "读取 Board，安排独立工作并留下接手说明"
 # worktree 由普通 Git 创建；同一 Project 中的 Run 可以选择不同工作目录。
 node src/cli.mjs run --task TASK_ID --provider deepseek --model deepseek-flash --workspace E:/worktrees/example
 ```
 
 所有 worker 都有 `read_project_board`：默认聚合 Task 状态、未确定退出及最近 Run、workspace、checkpoint 和最近三条消息的简短预览。预览最多 500 字符，Task assessment 与 Run execution 分开展示，不推导新的 running/waiting/done 状态。传 `taskId` 可读取完整 Task/checkpoint、最近 Runs（含 capabilities）和分页消息；传 `after` 继续消息分页。Git 观察注明实际目录，历史 checkpoint 不是新观察。
 
-显式加载本服务的 `src/scheduler.ts` 才提供 `create_task`、`start_run`、`inspect_run` 工具。服务按真实 Run 绑定 Project 和启动来源，限定这些 Agent 入口访问当前 Project；`started_by_run_id` 只是来源记录，不是父子身份。新 worker 默认不继承 capability。调度不签发 Human Decision，消息也不授予部署权限。
+上例使用独立 [Threshold-capability](https://github.com/Key-of-door/Threshold-capability) 仓库中的可选 scheduler。需要先自行 clone，再显式选择；主仓库不安装或自动发现它。该 extension 提供 `create_task`、`start_run`、`inspect_run` 工具，用户也可以自行实现兼容客户端。服务不识别官方 capability 文件或业务名称，只按真实 Run 绑定 Project 和启动来源、限定 Project 范围并检查资源额度。`started_by_run_id` 只是来源记录，不是父子身份。新 worker 默认不继承 capability。调度不签发 Human Decision，消息也不授予部署权限。
 
 `start_run` 指定已存在的 Task、objective 和绝对 worktree 路径，默认沿用调用者 provider/model。服务确认目录是同一 Git repository 的 worktree root。Run 的执行、checkpoint Git 和工作目录占用检查使用该目录。并发隔离限于本服务管理的 writer；不隔离共享 Git refs、任意同用户进程或外部服务。
 
@@ -133,7 +133,9 @@ node src/cli.mjs run --task TASK_ID --provider deepseek --model deepseek-flash -
 
 服务默认 `--max-parallel-runs 3 --max-runs 100`。前者包含 scheduler 和 unknown exit；后者计算**该 home 中全部历史 Run**，所有 Project、CLI 和调度入口共享，失败的启动后运行也计数，替换 scheduler 或重启不会清零。操作者可显式调整服务配置。达到限制返回 HTTP 429 technical/resource error，不创建 Run，也不转成 ASK。Board 显示计数和剩余额度。
 
-这些是 managed launch 资源限制，不是 token/金额上限或同用户任意 shell 的 sandbox。未加载扩展意味着没有对应工具，不代表同用户无法调用普通客户端入口；普通入口同样经过资源检查。未知退出占用工作目录和额度，需实际排查旧进程，当前没有自动清理未知状态的接口。
+这些是 managed launch 资源限制，不是 token/金额上限或同用户任意 shell 的 sandbox。未加载扩展意味着模型没有对应工具，不意味着 API 权限隔离；普通入口同样经过资源检查。未知退出占用工作目录和额度，需实际排查旧进程，当前没有自动清理未知状态的接口。
+
+外围能力仅作可选参考。删除整个 capability checkout 后，不选择额外文件的 Run 仍有 Threshold 自带的 Task/Message/checkpoint/Board/Risk STOP 连接及 Pi 普通工具。主仓库不依赖外围仓库来启动服务或运行自身测试。显式选择不存在的路径仍是配置错误。历史 Run 的路径/入口 SHA 保持原记录，不因 capability 搬迁而重写。
 
 第一次 scheduler → 并行 workers → 替换 scheduler 的 self-hosting 观察见 [Project scheduling](docs/project-scheduling-2026-09-13.md)，包括一次未完成的初始 Run。
 
@@ -146,7 +148,6 @@ node src/cli.mjs run --task TASK_ID --provider deepseek --model deepseek-flash -
 | `src/pi.mjs` | Pi 进程/RPC/取消；不拥有模型循环 |
 | `src/capabilities.mjs` | 本地入口文件选择与调试用哈希 |
 | `src/extension.ts` | 任务/checkpoint、显式状态、消息收发、`fake_deploy` |
-| `src/scheduler.ts` | 显式选中的 Task/Run 调度工具；不拥有 worker 进程 |
 | `src/git.mjs` | 按需 Git 读取 |
 | `src/cli.mjs` | 服务客户端与启动入口 |
 
