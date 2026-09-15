@@ -1,0 +1,11 @@
+{
+  "name": "threshold-pi-phase-a",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "node phase-a.mjs"
+  },
+  "dependencies": {
+    "@earendil-works/pi-coding-agent": "0.85.1"
+  }
+}

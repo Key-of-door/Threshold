@@ -1,0 +1,28 @@
+{
+  "name": "threshold-lite",
+  "version": "0.2.0-alpha.1",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.18.0"
+  },
+  "bin": {
+    "threshold": "src/cli.mjs"
+  },
+  "files": [
+    "src/",
+    "README.md",
+    "docs/user-guide.md",
+    "docs/cli-migration.md",
+    "examples/pi/"
+  ],
+  "scripts": {
+    "start": "node src/cli.mjs serve",
+    "test": "node --test tests/*.test.mjs",
+    "demo:restart": "node tests/restart-demo.mjs"
+  },
+  "dependencies": {
+    "@earendil-works/pi-coding-agent": "0.85.1",
+    "string-width": "8.2.2"
+  }
+}
