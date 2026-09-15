@@ -78,7 +78,7 @@ test('explicit Run objective reaches the worker; task update is ordinary, attrib
     // CLI is a client, not a Human Decision issuer for this ordinary operation.
     const cli = new URL('../src/cli.mjs', import.meta.url);
     const { fileURLToPath } = await import('node:url');
-    const { stdout } = await promisify(execFile)(process.execPath, [fileURLToPath(cli), 'task', 'update', '--home', home,
+    const { stdout } = await promisify(execFile)(process.execPath, [fileURLToPath(cli), 'task', 'update', '--json', '--home', home,
       '--task', task.id, '--status', 'in_progress', '--note', 'Review found remaining work'], { windowsHide: true });
     const reopened = JSON.parse(stdout);
     assert.equal(reopened.status, 'in_progress');

@@ -79,7 +79,7 @@ test('CLI selection reaches one Run and survives restart as metadata; the next R
     const task = (await call('/tasks', { projectId: project.id, title: 'Work', instructions: 'Work normally' })).data;
     assert.equal((await call(`/tasks/${task.id}/runs`, { provider: 'fixture', model: 'fixture', skills: [join(home, 'missing')] })).status, 400);
     const cli = resolve('src/cli.mjs');
-    const { stdout } = await promisify(execFile)(process.execPath, [cli, 'run', '--home', home, '--task', task.id, '--provider', 'fixture', '--model', 'fixture', '--skill', a, '--skill', b, '--extension', hello], { windowsHide: true });
+    const { stdout } = await promisify(execFile)(process.execPath, [cli, 'run', '--json', '--home', home, '--task', task.id, '--provider', 'fixture', '--model', 'fixture', '--skill', a, '--skill', b, '--extension', hello], { windowsHide: true });
     const run = JSON.parse(stdout);
     assert.deepEqual(options.capabilities, run.capabilities);
     assert.equal(run.capabilities.skills.length, 2); assert.match(run.capabilities.skills[0].sha256, /^[a-f0-9]{64}$/);

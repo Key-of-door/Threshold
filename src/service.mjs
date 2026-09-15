@@ -6,6 +6,7 @@ import { openStore } from './store.mjs';
 import { git, observeGit, worktreePath } from './git.mjs';
 import { startPi } from './pi.mjs';
 import { selectCapabilities } from './capabilities.mjs';
+import { liveActivity } from './run-live.mjs';
 
 const problem = (status, message) => Object.assign(new Error(message), { status });
 const text = (value, name, max = 12000) => {
@@ -79,7 +80,8 @@ export async function startService({ home, agentDir, port = 8765, workerFactory 
       if (store.task(taskId).project_id !== store.task(run.task_id).project_id) throw problem(403, 'Task belongs to another Project');
       return taskId;
     };
-    function launch(taskId, provider, model, objective, skills, extensions, workspace, startedBy = null) {
+    function launch(taskId, provider, model, objective, skills, extensions, workspace, startedBy = null, interactive = false) {
+      if (typeof interactive !== 'boolean') throw problem(400, 'interactive must be a boolean');
       const state = store.context(taskId);
       let repo;
       try { repo = worktreePath(state.project.repo_path, workspace); }
@@ -95,15 +97,25 @@ export async function startService({ home, agentDir, port = 8765, workerFactory 
       // No await between resource checks and the durable insert; all launch routes share this path.
       const run = store.startRun(taskId, provider, model, objective, capabilities, repo, startedBy);
       const token = randomBytes(32).toString('hex');
-      const job = { active: true, repo, worker: null, done: null,
+      let endRequested;
+      const end = new Promise(resolve => { endRequested = resolve; });
+      const job = { active: true, repo, worker: null, done: null, interactive, ready: false, phase: 'starting',
+        endRequested, live: liveActivity(), inputPending: false,
         observation: { source: 'runtime_events_in_memory', toolCalls: 0, toolNames: [], checkpointRead: null, agentEnd: false } };
       jobs.set(run.id, job); tokens.set(token, run);
       job.done = (async () => {
-        let error, exit = { code: null };
+        let error, stage = 'runtime startup', exit = { code: null };
         try {
           job.worker = workerFactory({ cwd: job.repo, agentDir, provider, model, capabilities,
             env: { THRESHOLD_SERVICE_URL: url, THRESHOLD_RUN_TOKEN: token },
             onEvent(event) {
+              job.live.observe(event);
+              if (event.type === 'agent_start') job.phase = 'working';
+              if (event.type === 'agent_settled') {
+                job.phase = interactive ? 'waiting for input' : 'settled';
+                if (!interactive) job.ready = false;
+              }
+              if (event.type === 'queue_update') job.queued = (event.steering?.length ?? 0) + (event.followUp?.length ?? 0);
               if (event.type === 'tool_execution_start') {
                 job.observation.toolCalls++;
                 if (!job.observation.toolNames.includes(event.toolName) && job.observation.toolNames.length < 32)
@@ -119,12 +131,15 @@ export async function startService({ home, agentDir, port = 8765, workerFactory 
           if (!native?.sessionId) throw new Error('Pi did not return a sessionId');
           store.running(run.id, native.sessionId);
           if (capabilities.skills.length) {
+            stage = 'capability catalog loading';
             const { commands } = await job.worker.request('get_commands');
             job.observation.availableSkills = commands.filter(command => command.source === 'skill');
             const loadedPaths = job.observation.availableSkills.map(command => command.sourceInfo?.path);
             if (capabilities.skills.some(file => !loadedPaths.includes(file.path)))
               throw new Error('Pi did not load the selected skill catalog');
           }
+          stage = 'model turn';
+          job.ready = true; job.phase = 'working';
           if (!shuttingDown && !job.cancelled) await job.worker.turn(
             'Call read_task first. Follow its task instructions and use the checkpoint to orient yourself. '
             + (capabilities.skills.length ? `Then read the SKILL.md files explicitly selected for this Run: ${JSON.stringify(capabilities.skills.map(file => file.path))}. Apply their relevant guidance; explicit task/objective instructions take precedence. A skill is guidance, not approval or a requirement to invent changes. ` : '')
@@ -135,11 +150,19 @@ export async function startService({ home, agentDir, port = 8765, workerFactory 
             + 'Run the relevant check, then save_checkpoint with what changed, the actual check result, open issues and next step. '
             + 'Use update_task_status explicitly if your assessment of the whole Task changes; finishing a Run objective alone does not mean the Task is done. '
             + 'A Task marked done can be reopened as in_progress if work remains. Task status is a work assessment, not Human approval. '
-            + 'Do not push. Ordinary work needs no deployment decision. If you cannot finish the objective, record the remaining work honestly before ending.');
+            + 'Do not push. Ordinary work needs no deployment decision. If you cannot finish the objective, record the remaining work honestly before ending.'
+            + (interactive ? ' This is an interactive Run. After each useful increment, save a meaningful checkpoint and reply to the user. You may ask questions and wait for another input. Conversation is temporary and is not a Human Decision; use the existing controlled-operation route.' : ''), interactive ? 0 : undefined);
+          if (interactive && !shuttingDown && !job.cancelled) {
+            // Settled is idle, not an exit. The worker and its resource slot remain held.
+            await Promise.race([end, job.worker.closed ?? new Promise(() => {})]);
+          }
         } catch (caught) {
           // Provider errors can contain credentials. Do not persist raw provider output.
-          error = 'Runtime request failed; check runtime/provider configuration and re-observe project state';
+          const reason = caught.code === 'THRESHOLD_TURN_TIMEOUT' ? '3-minute turn limit reached'
+            : caught.code === 'THRESHOLD_RPC_TIMEOUT' ? 'Pi RPC response timed out' : 'request failed (exact cause unavailable)';
+          error = `${stage}: ${reason}. ${stage === 'runtime startup' ? 'Check Pi installation and agent-dir.' : stage === 'capability catalog loading' ? 'Check selected skill/extension paths and compatibility.' : 'Check provider/model configuration and runtime availability.'} Re-observe project state before continuing.`;
         } finally {
+          job.ready = false;
           if (job.worker) {
             exit = await job.worker.stop();
             if (exit.forced || exit.partialFrame || exit.code !== 0) error ??= 'Pi exit was abnormal; descendant/effect state is not established';
@@ -147,6 +170,7 @@ export async function startService({ home, agentDir, port = 8765, workerFactory 
           if (job.cancelled || shuttingDown) error ??= 'Run interrupted by service/client; inspect workspace before continuing';
           store.endRun(run.id, exit, error);
           job.active = false; tokens.delete(token);
+          job.phase = 'ended';
           // Bound transient runtime metadata; durable Run rows remain available in SQLite.
           if (jobs.size > 64) for (const [id, old] of jobs) { if (!old.active && id !== run.id) { jobs.delete(id); break; } }
         }
@@ -222,6 +246,13 @@ export async function startService({ home, agentDir, port = 8765, workerFactory 
         }
         // Compact index only; full Task detail stays on GET /tasks/:id.
         if (method === 'GET' && path === '/status') return reply(200, store.statusIndex());
+        if (method === 'GET' && path === '/lookup') {
+          const kind = requestUrl.searchParams.get('kind'), prefix = requestUrl.searchParams.get('prefix');
+          const projectId = requestUrl.searchParams.get('projectId');
+          if (!['project', 'task', 'run'].includes(kind) || !/^[a-f0-9-]{1,36}$/i.test(prefix ?? '')) throw problem(400, 'Use kind=project|task|run and a hexadecimal ID prefix');
+          if (projectId && !store.project(projectId)) throw problem(404, 'Project not found');
+          return reply(200, store.lookup(kind, prefix.toLowerCase(), projectId));
+        }
         const projectBoard = path.match(/^\/projects\/([^/]+)\/board$/);
         if (method === 'GET' && projectBoard) return reply(200, board(projectBoard[1]));
         if (method === 'POST' && path === '/projects') {
@@ -255,15 +286,41 @@ export async function startService({ home, agentDir, port = 8765, workerFactory 
           const run = tokens.get(req.headers.authorization?.replace(/^Bearer /, ''));
           if (run) sameProjectTask(run, taskRoute[1]);
           return reply(202, launch(taskRoute[1], text(data.provider, 'provider', 100), text(data.model, 'model', 200),
-            data.objective === undefined ? null : text(data.objective, 'objective', 6000), data.skills, data.extensions, data.workspacePath, run?.id));
+            data.objective === undefined ? null : text(data.objective, 'objective', 6000), data.skills, data.extensions, data.workspacePath, run?.id, data.interactive));
         }
-        const runRoute = path.match(/^\/runs\/([^/]+)(\/stop)?$/);
+        const runRoute = path.match(/^\/runs\/([^/]+)(\/(?:stop|live|input))?$/);
         if (runRoute) {
           const run = store.run(runRoute[1]), job = jobs.get(runRoute[1]);
           if (!run) throw problem(404, 'Run not found');
           if (method === 'GET' && !runRoute[2]) return reply(200, { ...run, runtimeObservation: job?.observation });
-          if (method === 'POST' && runRoute[2]) {
-            if (job?.active) { job.cancelled = true; await job.worker?.stop(); await job.done; }
+          if (method === 'GET' && runRoute[2] === '/live') {
+            const after = pageNumber(requestUrl.searchParams.get('after'), 0, 0, Number.MAX_SAFE_INTEGER);
+            const task = store.task(run.task_id);
+            return reply(200, { run, project: store.project(task.project_id).name, task: task.title,
+              available: Boolean(job), active: Boolean(job?.active), policy: job ? job.interactive ? 'interactive' : 'background' : null,
+              phase: job?.phase ?? null, queued: job?.queued ?? 0, resources: resources(),
+              ...(job?.live.read(after) ?? { events: [], nextCursor: 0, truncated: false }) });
+          }
+          if (method === 'POST' && runRoute[2] === '/input') {
+            const message = text((await body(req)).message, 'message', 6000);
+            if (!job?.active || job.cancelled) throw problem(409, 'Run is no longer accepting input. No new Run was created.');
+            if (!job.ready) throw problem(409, 'Run is still starting; wait for runtime readiness.');
+            if (job.inputPending || (job.queued ?? 0) >= 16) throw problem(409, 'Run input is busy or its queue is full; wait before sending more.');
+            job.inputPending = true;
+            job.live.add('input', { text: message });
+            try {
+              // Pi chooses idle prompt vs streaming steering at its own execution boundary.
+              // This is an ordinary local client input, never a Human Decision.
+              await job.worker.request('prompt', { message, streamingBehavior: 'steer' });
+              job.live.add('notice', { text: 'Input accepted by Pi; acceptance does not establish processing.' });
+              return reply(202, { accepted: true, processed: false, runId: run.id });
+            } catch {
+              job.live.add('error', { text: 'Input delivery is unconfirmed. Inspect live activity before resending.' });
+              throw problem(502, 'Input delivery is unconfirmed; inspect live activity before resending.');
+            } finally { job.inputPending = false; }
+          }
+          if (method === 'POST' && runRoute[2] === '/stop') {
+            if (job?.active) { job.cancelled = true; job.ready = false; job.endRequested(); await job.worker?.stop(); await job.done; }
             return reply(200, store.run(run.id));
           }
         }
@@ -280,7 +337,7 @@ export async function startService({ home, agentDir, port = 8765, workerFactory 
   function close() {
     return closing ??= (async () => {
       shuttingDown = true;
-      await Promise.all([...jobs.values()].filter(j => j.active).map(async j => { await j.worker?.stop(); await j.done; }));
+      await Promise.all([...jobs.values()].filter(j => j.active).map(async j => { j.ready = false; j.endRequested(); await j.worker?.stop(); await j.done; }));
       await new Promise(resolve => server.close(resolve));
       store.close();
       unlinkSync(infoPath); unlinkSync(lockPath);

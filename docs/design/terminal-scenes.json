@@ -1,0 +1,46 @@
+{
+  "help": {
+    "label": "01 · 顶层 help", "command": "threshold --help",
+    "lines": ["{logo}", "{title|threshold}  {dim|0.2 · design preview}", "Project persists. Agents come and go.", "", "{head|Start here}", "  {accent|serve}                  Start the local service", "  {accent|project create}         Connect this Git repository", "  {accent|task create}            Give the project a task", "  {accent|run}                    Start a fresh worker", "  {accent|status}                 See where the work stands", "", "{head|Work together}", "  task update            Record a work assessment", "  message read / send    Exchange project notes", "  board                  See tasks and runs together", "", "{head|Stop something}", "  run stop ID            One worker", "  service stop           Service and managed workers", "", "{head|When needed}", "  decision               Human decision for fake_deploy", "  --json                 Machine-readable output", "  --home PATH            Choose another data directory", "  --version              Show the installed version", "", "{dim|Details and examples}   threshold COMMAND --help", "{dim|Normal coding needs no deployment decision.}"]
+  },
+  "empty": {
+    "label": "02 · Repo 尚未登记", "command": "threshold status",
+    "lines": ["{title|log-summary}  {dim|current repository}", "{dim|E:/work/log-summary}", "", "{head|No Project here yet}", "This Git repository is ready to connect.", "", "{dim|Next}", "  {accent|threshold project create}", "", "{dim|Looking for another project?}", "  threshold status --all"]
+  },
+  "board": {
+    "label": "03 · Project 总览", "command": "threshold status",
+    "lines": ["{title|Threshold}  {dim|project ef2e9b18}", "{dim|E:/work/Threshold}", "", "{head|Work in progress}                     {dim|2 running · 1 needs attention}", "", "{accent|›} {head|CLI first-use polish}                         {dim|82e3ec1a}", "  {accent|● running}  a317c29d · Review the actual diff", "  {dim|Checkpoint}  Help and short IDs are in; review remains.", "", "  {head|Windows path handling}                       {dim|f140ac28}", "  {accent|● running}  b028dc71 · Check paths with spaces", "  {dim|Checkpoint}  Not saved yet.", "", "  {head|Install instructions}                        {dim|91bc724e}", "  {error|! ended · runtime error}  d70c9f24", "  {dim|Cause}  Model turn exceeded the 3-minute limit.", "", "{dim|2 running / 3 slots · 12 / 100 historical starts}", "", "{dim|Inspect the interrupted work}", "  {accent|threshold status --run d70c9f24}", "{dim|Task detail}  threshold status --task 82e3ec1a"]
+  },
+  "task": {
+    "label": "04 · Task detail", "command": "threshold status --task 82e3ec1a",
+    "lines": ["{title|CLI first-use polish}  {dim|82e3ec1a}", "{accent|in_progress}  {dim|work assessment · Threshold}", "", "{head|Task}", "Make the first workflow usable from README and help.", "Keep ordinary CLI commands scriptable.", "", "{head|Checkpoint}  {dim|from run 8e31b7c2 · agent summary}", "Help, stable home and short IDs are implemented.", "Ran npm test: 23 tests passed.", "Still to do: independent review and first-use trial.", "", "{head|Recent runs}", "  {accent|● running}  a317c29d  Review the actual diff", "  {dim|— ended}    8e31b7c2  Implement CLI changes", "", "{head|Messages}  2 available", "  threshold message read --task 82e3ec1a", "", "{dim|Full checkpoint shown. Test result above is a summary.}", "{dim|Run ending does not change the Task assessment.}"]
+  },
+  "run": {
+    "label": "05 · 运行中的 Run", "command": "threshold status --run a317c29d",
+    "lines": ["{title|Review the actual diff}", "{accent|● running}  {dim|a317c29d · CLI first-use polish}", "", "{head|Runtime}", "  Model       deepseek / deepseek-flash", "  Session     01a0a0bf…d46a", "  Started     10:42:08", "  Workspace   E:/worktrees/threshold-review", "", "{head|Observed tools}  {dim|7 calls in this service process}", "  read_task · read · bash", "", "{head|Capabilities}  {dim|explicitly selected for this Run}", "  Skill       reviewer", "  Extension   none", "", "{dim|This is a snapshot, not a live view.}", "", "{dim|Refresh}  threshold status --run a317c29d", "{dim|Stop}     threshold run stop a317c29d"]
+  },
+  "error": {
+    "label": "06 · ended + runtime error", "command": "threshold status --run d70c9f24",
+    "lines": ["{title|Check the install instructions}", "{error|! ended · runtime error}  {dim|d70c9f24}", "", "{head|What happened}", "Model turn reached the 3-minute limit.", "Pi exited; the Task is still in_progress.", "", "{head|What remains uncertain}", "Files may have changed before the interruption.", "Completion has not been established.", "", "{head|Before another Run}", "Inspect the checkpoint and current Git/files.", "", "  {accent|threshold status --task 91bc724e}", "  git status --short", "  git diff", "", "{dim|No automatic retry. This is a technical interruption,}", "{dim|not a request for deployment authorization.}"]
+  },
+  "parallel": {
+    "label": "07 · 并行 workers", "command": "threshold board",
+    "lines": ["{title|Threshold}  {dim|workers}", "{accent|2 running}  {dim|· 1 starting · 3 / 3 slots occupied}", "", "{accent|●} {head|Review CLI changes}                    {dim|a317c29d}", "  running   · task 82e3ec1a", "  {dim|E:/worktrees/threshold-review}", "", "{accent|●} {head|Check Windows paths}                   {dim|b028dc71}", "  running   · task f140ac28", "  {dim|E:/worktrees/threshold-paths}", "", "{dim|○} {head|Read the install guide}                {dim|c036ae54}", "  starting  · task 91bc724e", "  {dim|E:/worktrees/threshold-docs}", "", "{dim|No manager/worker hierarchy implied by this view.}", "{dim|A free slot appears when a Run settles.}", "", "{dim|Inspect}  threshold status --run a317c29d", "{dim|Stop one} threshold run stop a317c29d"]
+  },
+  "messages": {
+    "label": "08 · Message / checkpoint", "command": "threshold message read --task 82e3ec1a",
+    "lines": ["{title|Messages}  {dim|CLI first-use polish · 82e3ec1a}", "", "{head|#4}  {dim|run a317c29d · review}", "The sample file appears to be missing.", "Please verify the README example before closing.", "", "{head|#5}  {dim|run b028dc71 · follow-up}", "I checked examples/sample.ndjson; it exists.", "The example runs correctly. No fixture change needed.", "", "{dim|2 messages shown · no further messages at this snapshot}", "{dim|Messages are collaboration inputs. Check the files.}", "", "{head|Checkpoint stays separate}", "See the Task for its current continuation summary.", "", "  {accent|threshold status --task 82e3ec1a}"]
+  },
+  "offline": {
+    "label": "09 · Service 未启动", "command": "threshold status",
+    "lines": ["{warn|! Service address unavailable}", "Cannot read a service address in the selected home.", "", "{dim|Home}  C:/Users/you/AppData/Local/Threshold", "", "{head|Start the service in another terminal}", "  {accent|threshold serve}", "", "{dim|If you use a separate Pi config, add --agent-dir PATH.}", "{dim|If you use another home, use the same --home on both.}", "", "No project change was requested."]
+  },
+  "capabilities": {
+    "label": "10 · Capability selection", "command": "threshold run --task 82e3ec1a --provider deepseek --model deepseek-flash --skill E:/caps/reviewer/SKILL.md --extension E:/caps/scheduler/index.ts",
+    "lines": ["{title|Review and delegate a focused check}", "{dim|○ starting}  {dim|c036ae54 · task 82e3ec1a}", "", "{head|Selected for this Run}", "  Skill       {accent|reviewer}", "              E:/caps/reviewer/SKILL.md", "              {dim|sha256 93b730da…7e42}", "", "  Extension   {accent|scheduler}", "              E:/caps/scheduler/index.ts", "              {dim|sha256 f812ba60…0981}", "", "{dim|Names are path labels, not built-in roles.}", "{dim|Selected does not mean runtime loading is verified yet.}", "{dim|The next Run inherits neither selection.}", "", "{head|Runtime loading}", "  Waiting for startup observation.", "", "{dim|Inspect}  threshold status --run c036ae54"]
+  },
+  "startup": {
+    "label": "11 · Service 启动", "command": "threshold serve --agent-dir E:/pi-agent",
+    "lines": ["{logo}", "{title|threshold}  {dim|local project service}", "", "{ok|● listening}  http://127.0.0.1:8765", "", "  Home        C:/Users/you/AppData/Local/Threshold", "  Pi config   E:/pi-agent", "", "{dim|Listening does not verify provider connectivity.}", "", "{head|In another terminal}", "  {accent|threshold status}", "", "{dim|Keep this terminal open.}", "{dim|Stop service + managed workers}  threshold service stop"]
+  }
+}

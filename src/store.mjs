@@ -54,6 +54,16 @@ export function openStore(path) {
     task: requiredTask,
     project: id => db.prepare('SELECT * FROM projects WHERE id=?').get(id),
     projects: () => db.prepare('SELECT * FROM projects ORDER BY created_at').all(),
+    lookup(kind, prefix, projectId) {
+      const queries = {
+        project: ['SELECT id, name AS label FROM projects WHERE substr(id,1,?)=? ORDER BY id LIMIT 21', [prefix.length, prefix]],
+        task: ['SELECT id, title AS label FROM tasks WHERE substr(id,1,?)=? AND (? IS NULL OR project_id=?) ORDER BY id LIMIT 21', [prefix.length, prefix, projectId ?? null, projectId ?? null]],
+        run: ['SELECT r.id, r.objective AS label FROM runs r JOIN tasks t ON t.id=r.task_id WHERE substr(r.id,1,?)=? AND (? IS NULL OR t.project_id=?) ORDER BY r.id LIMIT 21', [prefix.length, prefix, projectId ?? null, projectId ?? null]],
+      };
+      const [sql, params] = queries[kind];
+      const rows = db.prepare(sql).all(...params);
+      return { matches: rows.slice(0, 20), hasMore: rows.length > 20 };
+    },
     tasks: () => db.prepare('SELECT id FROM tasks').all().map(row => requiredTask(row.id)),
     // Compact index for the bare `status` CLI: no instructions, checkpoints or Run objectives.
     statusIndex() {

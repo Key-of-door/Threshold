@@ -3,10 +3,10 @@ import { EventEmitter } from 'node:events';
 import { fileURLToPath } from 'node:url';
 
 // A Pi process client, not a cross-runtime abstraction. No project state lives here.
-export function startPi({ cwd, agentDir, provider, model, env, capabilities = { skills: [], extensions: [] }, onEvent = () => {} }) {
+export function startPi({ cwd, agentDir, provider, model, env, capabilities = { skills: [], extensions: [] }, onEvent = () => {}, spawnProcess = spawn }) {
   const cli = fileURLToPath(new URL('../node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js', import.meta.url));
   const extension = fileURLToPath(new URL('./extension.ts', import.meta.url));
-  const child = spawn(process.execPath, [cli, '--mode', 'rpc', '--offline', '--no-extensions',
+  const child = spawnProcess(process.execPath, [cli, '--mode', 'rpc', '--offline', '--no-extensions',
     '--no-skills', '--no-context-files', '--no-prompt-templates', '--no-themes', '--no-approve',
     ...capabilities.skills.flatMap(file => ['--skill', file.path]),
     ...capabilities.extensions.flatMap(file => ['--extension', file.path]),
@@ -50,21 +50,21 @@ export function startPi({ cwd, agentDir, provider, model, env, capabilities = { 
     return new Promise((resolve, reject) => {
       if (closed || lastError) return reject(lastError ?? new Error('Pi is closed'));
       const id = String(++requestId);
-      const timer = setTimeout(() => { pending.delete(id); reject(new Error(`Pi ${type} timeout`)); }, timeout);
+      const timer = setTimeout(() => { pending.delete(id); reject(Object.assign(new Error(`Pi ${type} timeout`), { code: 'THRESHOLD_RPC_TIMEOUT' })); }, timeout);
       pending.set(id, { resolve: data => { clearTimeout(timer); resolve(data); }, reject: error => { clearTimeout(timer); reject(error); } });
       child.stdin.write(JSON.stringify({ id, type, ...args }) + '\n');
     });
   }
   let stopping;
   return {
-    pid: child.pid, request,
+    pid: child.pid, request, closed: done,
     async turn(message, timeout = 180000) {
       const cursor = sequence;
       let clean;
       const ended = new Promise((resolve, reject) => {
-        const onEvent = (event, seq) => { if (seq > cursor && event.type === 'agent_end') { clean(); resolve(event); } };
+        const onEvent = (event, seq) => { if (seq > cursor && event.type === 'agent_settled') { clean(); resolve(event); } };
         const onFail = error => { clean(); reject(error); };
-        const timer = setTimeout(() => onFail(new Error('Pi turn timed out')), timeout);
+        const timer = timeout > 0 ? setTimeout(() => onFail(Object.assign(new Error('Pi turn timed out'), { code: 'THRESHOLD_TURN_TIMEOUT' })), timeout) : undefined;
         clean = () => { clearTimeout(timer); bus.off('event', onEvent); bus.off('failed', onFail); };
         bus.on('event', onEvent); bus.on('failed', onFail);
       });

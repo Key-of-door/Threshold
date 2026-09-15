@@ -23,7 +23,7 @@ test('unknown command fails with usage on stderr; no-argument usage stays succes
   await assert.rejects(run('statuz'), error => {
     assert.equal(error.code, 1);
     assert.match(error.stderr, /Unknown command: statuz/);
-    assert.match(error.stderr, /threshold serve/);
+    assert.match(error.stderr, /threshold --help/);
     assert.ok(noStack(error.stderr));
     return true;
   });

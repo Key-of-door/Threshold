@@ -79,7 +79,7 @@ test('Agent sender/task are server-bound, client messages stay client, and messa
     const fake = (await call(`/tasks/${a.id}/messages`, { body: 'Local client note', from_run_id: run.id })).data;
     assert.equal(fake.source, 'client'); assert.equal(fake.from_run_id, null);
     const cli = fileURLToPath(new URL('../src/cli.mjs', import.meta.url));
-    const invoke = async (...args) => JSON.parse((await promisify(execFile)(process.execPath, [cli, ...args, '--home', home], { windowsHide: true })).stdout);
+    const invoke = async (...args) => JSON.parse((await promisify(execFile)(process.execPath, [cli, ...args, '--json', '--home', home], { windowsHide: true })).stdout);
     const local = await invoke('message', 'send', '--task', a.id, '--body', 'Please check the CLI');
     assert.equal(local.source, 'client');
     const page = await invoke('message', 'read', '--task', a.id, '--after', String(fake.id));

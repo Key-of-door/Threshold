@@ -69,7 +69,7 @@ async function run(taskId, label) {
 try {
   service = await boot();
   // Exercise CLI creation as the Human/client entry point; only the service opens SQLite.
-  const cli = (...args) => JSON.parse(execFileSync(process.execPath, ['src/cli.mjs', ...args, '--home', home], { cwd: root, windowsHide: true, encoding: 'utf8' }));
+  const cli = (...args) => JSON.parse(execFileSync(process.execPath, ['src/cli.mjs', ...args, '--json', '--home', home], { cwd: root, windowsHide: true, encoding: 'utf8' }));
   const project = cli('project', 'create', '--name', 'Persistent two-step project', '--repo', repo);
   const task = cli('task', 'create', '--project', project.id, '--title', 'Implement arithmetic in two separate runs', '--instructions',
     'Work only in this disposable repository. First call read_task and inspect git status, git diff and the source/tests. '
