@@ -7,6 +7,8 @@ import { git, observeGit, worktreePath } from './git.mjs';
 import { startPi } from './pi.mjs';
 import { selectCapabilities } from './capabilities.mjs';
 import { liveActivity } from './run-live.mjs';
+import { checkModel, modelChoices } from './pi-config.mjs';
+import { runtimeError } from './runtime-error.mjs';
 
 const problem = (status, message) => Object.assign(new Error(message), { status });
 const text = (value, name, max = 12000) => {
@@ -67,7 +69,6 @@ export async function startService({ home, agentDir, port = 8765, workerFactory 
       writeFileSync(keyPath, humanKey, { flag: 'wx', mode: 0o600 });
     }
     if (!/^[a-f0-9]{64}$/.test(humanKey)) throw new Error('Invalid Human client credential file');
-    store = openStore(join(home, 'project.sqlite'));
     const context = (taskId, workspace) => {
       const state = store.context(taskId);
       const path = workspace ?? state.project.repo_path;
@@ -80,8 +81,15 @@ export async function startService({ home, agentDir, port = 8765, workerFactory 
       if (store.task(taskId).project_id !== store.task(run.task_id).project_id) throw problem(403, 'Task belongs to another Project');
       return taskId;
     };
-    function launch(taskId, provider, model, objective, skills, extensions, workspace, startedBy = null, interactive = false) {
+    async function launch(taskId, provider, model, objective, skills, extensions, workspace, startedBy = null, interactive = false) {
       if (typeof interactive !== 'boolean') throw problem(400, 'interactive must be a boolean');
+      // A selected Pi extension may register its own provider/auth at startup.
+      // Let Pi resolve that path; generic preflight cannot assume its semantics.
+      if (workerFactory === startPi && !extensions?.length) {
+        try { await checkModel(agentDir, provider, model); }
+        catch (error) { throw problem(400, error.message); }
+      }
+      // Resource checks and insertion below stay synchronous after model preflight.
       const state = store.context(taskId);
       let repo;
       try { repo = worktreePath(state.project.repo_path, workspace); }
@@ -125,7 +133,7 @@ export async function startService({ home, agentDir, port = 8765, workerFactory 
                 job.observation.checkpointRead = event.result?.details?.checkpoint?.id ?? null;
               if (event.type === 'agent_end') job.observation.agentEnd = true;
               if (event.type === 'message_end' && ['error', 'aborted'].includes(event.message?.stopReason))
-                error = `Pi reported model turn ${event.message.stopReason}; inspect project state before continuing`;
+                error = `Pi reported model turn ${event.message.stopReason}: ${runtimeError(event.message.errorMessage)}; inspect project state before continuing`;
             } });
           const native = await job.worker.request('get_state');
           if (!native?.sessionId) throw new Error('Pi did not return a sessionId');
@@ -158,8 +166,7 @@ export async function startService({ home, agentDir, port = 8765, workerFactory 
           }
         } catch (caught) {
           // Provider errors can contain credentials. Do not persist raw provider output.
-          const reason = caught.code === 'THRESHOLD_TURN_TIMEOUT' ? '3-minute turn limit reached'
-            : caught.code === 'THRESHOLD_RPC_TIMEOUT' ? 'Pi RPC response timed out' : 'request failed (exact cause unavailable)';
+          const reason = runtimeError(caught);
           error = `${stage}: ${reason}. ${stage === 'runtime startup' ? 'Check Pi installation and agent-dir.' : stage === 'capability catalog loading' ? 'Check selected skill/extension paths and compatibility.' : 'Check provider/model configuration and runtime availability.'} Re-observe project state before continuing.`;
         } finally {
           job.ready = false;
@@ -211,7 +218,7 @@ export async function startService({ home, agentDir, port = 8765, workerFactory 
           if (method === 'POST' && path === '/agent/project/runs') {
             const data = await body(req);
             const taskId = sameProjectTask(run, text(data.taskId, 'taskId'));
-            return reply(202, launch(taskId, data.provider === undefined ? run.provider : text(data.provider, 'provider', 100),
+            return reply(202, await launch(taskId, data.provider === undefined ? run.provider : text(data.provider, 'provider', 100),
               data.model === undefined ? run.model : text(data.model, 'model', 200),
               text(data.objective, 'objective', 6000), data.skills, data.extensions, text(data.workspacePath, 'workspacePath'), run.id));
           }
@@ -246,6 +253,10 @@ export async function startService({ home, agentDir, port = 8765, workerFactory 
         }
         // Compact index only; full Task detail stays on GET /tasks/:id.
         if (method === 'GET' && path === '/status') return reply(200, store.statusIndex());
+        if (method === 'GET' && path === '/models') {
+          try { return reply(200, await modelChoices(agentDir)); }
+          catch (error) { throw problem(400, error.message); }
+        }
         if (method === 'GET' && path === '/lookup') {
           const kind = requestUrl.searchParams.get('kind'), prefix = requestUrl.searchParams.get('prefix');
           const projectId = requestUrl.searchParams.get('projectId');
@@ -285,7 +296,7 @@ export async function startService({ home, agentDir, port = 8765, workerFactory 
           const data = await body(req);
           const run = tokens.get(req.headers.authorization?.replace(/^Bearer /, ''));
           if (run) sameProjectTask(run, taskRoute[1]);
-          return reply(202, launch(taskRoute[1], text(data.provider, 'provider', 100), text(data.model, 'model', 200),
+          return reply(202, await launch(taskRoute[1], text(data.provider, 'provider', 100), text(data.model, 'model', 200),
             data.objective === undefined ? null : text(data.objective, 'objective', 6000), data.skills, data.extensions, data.workspacePath, run?.id, data.interactive));
         }
         const runRoute = path.match(/^\/runs\/([^/]+)(\/(?:stop|live|input|recover))?$/);
@@ -337,9 +348,16 @@ export async function startService({ home, agentDir, port = 8765, workerFactory 
       } catch (error) { if (!res.destroyed && !res.writableEnded) reply(error.status ?? 500, { error: error.status ? error.message : 'Technical failure; check request paths and local service configuration' }); }
     });
     await new Promise((resolve, reject) => { server.once('error', reject); server.listen(port, '127.0.0.1', resolve); });
+    // A rejected port bind must not perform restart recovery on an existing database.
+    // This synchronous initialization finishes before HTTP requests can be handled.
+    store = openStore(join(home, 'project.sqlite'));
     url = `http://127.0.0.1:${server.address().port}`;
-    writeFileSync(infoPath, JSON.stringify({ url, pid: process.pid, home }) + '\n');
-  } catch (error) { server?.close(); store?.close(); unlinkSync(lockPath); throw error; }
+    writeFileSync(infoPath, JSON.stringify({ url, pid: process.pid, home, agentDir }) + '\n');
+  } catch (error) {
+    server?.close(); store?.close(); unlinkSync(lockPath);
+    if (error.code === 'EADDRINUSE') throw new Error(`Port ${port} is already in use at 127.0.0.1. Inspect the listener and its service home before stopping it. Missing runtime markers do not prove the old service exited. Project database was not opened.`);
+    throw error;
+  }
   function close() {
     return closing ??= (async () => {
       shuttingDown = true;
@@ -349,5 +367,5 @@ export async function startService({ home, agentDir, port = 8765, workerFactory 
       unlinkSync(infoPath); unlinkSync(lockPath);
     })();
   }
-  return { url, home, close };
+  return { url, home, agentDir, close };
 }

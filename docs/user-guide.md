@@ -4,6 +4,83 @@ Use `threshold --help` for the command list and `threshold run --help` for a spe
 
 ## Provider setup
 
+### Guided setup
+
+Available in **0.2.0-alpha.2**. Install or update with `npm install -g threshold-lite@alpha`
+and check `threshold --version`. In a source checkout, `node src/cli.mjs` runs that checkout;
+it does not update a separately installed global `threshold` command.
+
+Use these commands **one at a time**, finishing each prompt before the next command:
+
+1. `threshold setup` — select the provider/model and enter the API key.
+2. `threshold service start` — start the background service and return to this terminal.
+3. `threshold project create` — choose an existing folder by absolute path.
+4. `threshold task create` — select a Project and enter the Task title/instructions.
+5. `threshold run --attach` — select a Task/model and start a conversation.
+
+Keep the `threshold` prefix on commands. Inside a prompt, enter the requested value rather
+than the next command: for example `deepseek` at **Provider name**. A hidden key prompt shows
+no characters as you type. Enter accepts a displayed default; Ctrl+C cancels the prompt.
+
+`setup` asks for provider name, model ID, and a hidden API key. **Run the command first,
+then paste the key at the hidden input prompt**; it is never a command-line argument.
+Existing Pi models work as before. For an unknown model, setup asks for its API base URL
+and format; DeepSeek uses the included compatible model settings. On Windows it also
+offers the installed Git Bash path if no shell is configured. It makes no model call.
+
+The wizard writes ordinary Pi `models.json`, `settings.json`, and `auth.json` under
+`~/.pi/agent` (or explicit `--agent-dir`). The key is **local plaintext**, protected by the
+local user's file access, not an OS credential vault or a sandbox. It stays out of Project,
+Task and Run records. Other providers/settings are retained. Entering a replacement key
+replaces that provider's stored credential and removes its old `models.json` key override.
+Leaving the key blank keeps the existing credential method. Existing OAuth/command-based
+setups remain supported through Pi; the wizard itself configures API keys only.
+
+New workers read the saved settings, even when the service is already running. Updating
+a shell environment variable still requires restarting the service in that environment.
+An already running worker keeps its configuration. `setup` uses the current service's
+agent directory when known; an explicit `--agent-dir` always wins. When starting a service
+with a custom agent directory, supply that option again.
+
+`service start` starts one background Node process and waits for readiness; it returns to
+the same terminal. It does not install a Windows service, login item or system autostart.
+Repeating it for a running service reports the existing instance without changing its
+configuration. `service status` distinguishes running, stopped, stale markers and
+unconfirmed availability using this home's runtime markers. Missing markers do not establish
+that an old process has exited. `serve` is still the foreground diagnostic entry point.
+No stale-lock or unknown-worker recovery is automatic.
+
+Create a project folder yourself, then enter its absolute path when `project create`
+asks. If it is not a Git repository, initialization requires `y` or `yes`; Enter means no. Existing
+files are kept. An explicitly selected subfolder of another Git repository is rejected
+with the parent root shown, rather than silently registering that parent. For scripts:
+
+```sh
+threshold project create --repo "E:/my-project" --init-git
+```
+
+`task create` asks for missing title/instructions and, when necessary, the Project.
+`run --attach` lists Tasks and models so you can choose numbers rather than copy UUIDs.
+The configured default model is offered, not forced. The guided path also asks for an
+optional objective, Skill path and Extension path. Blank capability inputs mean none;
+the next Run never inherits them. Use repeated flags for multiple capabilities.
+Native model choices come from Pi's local catalog/configuration, not a live provider query.
+Extension-defined models can still be selected explicitly with `--provider`/`--model`.
+
+Pipes and `--json` never prompt. Their existing required Task/provider/model flags and
+Run startup policy remain unchanged: `run` is background; `run --attach` is interactive.
+Existing data response shapes are retained. `/models` is a new read-only configuration
+listing without credentials; the local `server.json` locator now also records `agentDir`.
+No database migration is needed.
+
+For ordinary configured models, missing local credentials/model IDs are reported before
+inserting a Run. Credential presence is not online authentication or connectivity proof.
+When a custom Extension is selected, Pi resolves its potentially custom provider/auth
+during startup. Known runtime failures give bounded diagnostics; raw provider errors and
+request payloads are never copied into project history.
+
+### Manual / existing Pi setup
+
 Threshold uses Pi 0.85.1 configuration without owning model routing or login. If Pi already works with
 your provider, use the same agent directory. The service defaults to `~/.pi/agent`; `--agent-dir PATH`
 selects another directory. Service restarts must select it again. No author-specific configuration is required.
@@ -12,7 +89,7 @@ A minimal DeepSeek example is included in `examples/pi/models.json`. From a sour
 file to a new Pi configuration directory. From an installed package, the example is under the package
 directory reported by `npm root -g` (or `npm root -g --prefix YOUR_PREFIX`), in `threshold-lite/examples/pi/`.
 The example references `DEEPSEEK_API_KEY`; it contains no credential. Supply that environment variable
-using your normal secret setup in the terminal that launches `threshold serve`.
+using your normal secret setup in the terminal that launches `threshold service start` or `threshold serve`.
 Do not paste the value into Task instructions, Run objectives or command examples shared with others.
 
 On Windows put this in that Pi directory's `settings.json` (adjust the executable if installed elsewhere):
@@ -21,7 +98,7 @@ On Windows put this in that Pi directory's `settings.json` (adjust the executabl
 {"shellPath":"C:/Program Files/Git/bin/bash.exe"}
 ```
 
-Then start `threshold serve --agent-dir YOUR_PI_CONFIG` and use `--provider deepseek --model deepseek-flash`
+Then start `threshold service start --agent-dir YOUR_PI_CONFIG` and use `--provider deepseek --model deepseek-flash`
 on a Run. Model calls are billable according to your provider. The example's context/output settings
 are conservative local settings, not claims about maximum provider capabilities.
 Other providers use Pi's native setup; see [Pi configuration](https://github.com/earendil-works/pi/tree/v0.85.1/packages/coding-agent).
@@ -146,20 +223,49 @@ Pi's automatic project AGENTS/CLAUDE, skill and extension discovery is disabled 
 Put relevant project requirements in the Task and explicitly select desired capabilities. Do not assume
 a repository's instruction file has automatically been loaded.
 
+## Upgrading
+
+Finish the current work or intentionally stop it with `threshold service stop` (this stops managed
+workers), then run `npm install -g threshold-lite@alpha`, check `threshold --version`, and use
+`threshold service start`. Keep the same `--home` and, if used, `--agent-dir`. Installing a new CLI
+does not upgrade an already running service. This release adds no DB migration and preserves history.
+
+If you temporarily defined a PowerShell `function threshold` to run a source checkout, it still takes
+precedence over the installed npm command. Open a fresh terminal, or remove only that function with
+`Remove-Item Function:\threshold`, then check `Get-Command threshold` and `threshold --version`.
+
 ## Technical errors and stopping
 
-- No service address: check the printed home; start `serve` with the same `--home` if used before.
-- Cannot connect: check the serve terminal. A failed write response does not prove the action was absent;
+- No service address: check the printed home; use `service start` (background) or `serve` (foreground) with the same `--home` if used before.
+- Cannot connect: run `threshold service status`; for a foreground service, inspect its terminal. A failed write response does not prove the action was absent;
   inspect status/messages before repeating it.
 - Runtime startup: check installed Pi and the selected agent directory. Capability errors point to selection/loading.
-- Model turn failure: check provider/model setup and availability. Threshold reports the known stage; it may
-  not know whether the underlying cause was authentication, network, provider or runtime. It does not store raw provider errors.
-- Port in use: stop the intended old service, or choose another port with `serve --port NUMBER` (`0` chooses a free port).
+- Model turn failure: known missing-key, HTTP 401, HTTP 429 and connection failures get specific hints.
+  Other errors retain an explicit unknown cause. Credential presence does not prove remote authentication,
+  quota or model compatibility. Threshold does not store raw provider errors.
+- Port in use (`EADDRINUSE`): another process is listening. Identify it before stopping anything.
+  If it is the intended service, use its original home and normal stop path. A different independent
+  service can use a different `--home` and `service start --port NUMBER` (`0` chooses a free port).
+  Do not change ports to start a second service against a home whose old process is still alive.
 - Run limit: inspect Board. `--max-runs` counts all historical starts in this home, including failed starts;
   `--max-parallel-runs` includes unknown exits until explicit workspace recovery. Configure deliberately; don't delete history to replenish quota.
-- Stale lock / unknown exit: inspect the recorded process and workspace before intervention. Remove a stale
-  service lock only after checking the old service and workers are gone. Removing it does not recover a Run
+- Stale lock / unknown exit: inspect the recorded process and workspace before intervention. Remove stale
+  `server.lock` / `server.json` only after checking the old service and workers are gone. Never remove
+  `project.sqlite`, its WAL/SHM files, `human.key`, or project history as a startup fix. Removing markers does not recover a Run
   or establish external effects. After restarting, use the explicit recovery path below for stale occupancy.
+
+If service status says stopped but startup reports an occupied port, the old service may still be alive
+with missing locator files. This was observed during local onboarding. Status only describes what can
+be discovered from the selected home; it is not a system-wide process inventory. On Windows, inspect
+the listener without changing it:
+
+```powershell
+Get-NetTCPConnection -State Listen -LocalPort 8765 | Select-Object LocalAddress, LocalPort, OwningProcess
+```
+
+Use the returned PID to inspect the process and its command line. Do not delete markers repeatedly,
+kill every Node process, or infer that a missing address means all workers are gone. Recover the intended
+instance only after matching the process to its home; there is no automatic orphan-service adoption.
 
 `run stop ID` interrupts one worker. `service stop` requests shutdown of this service and all managed workers.
 An exit observation is not proof of arbitrary child-process cleanup or absent external effects.

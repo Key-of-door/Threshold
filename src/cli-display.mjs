@@ -10,13 +10,16 @@ export function defaultHome(platform = process.platform, env = process.env, user
 }
 
 const commands = {
+  setup: ['[--agent-dir PATH]', 'Configure a provider/model and a hidden API key in Pi local configuration. Terminal only. Existing settings and other providers are preserved; no model call is made. Stored credentials are local plaintext, not Project data.', 'threshold setup'],
+  'service start': ['[--agent-dir PATH] [--port 8765] [--max-parallel-runs 3] [--max-runs 100]', 'Start the local service in the background and return to this terminal. An already running service is reused without changing its options. No login/autostart is installed. Use serve for foreground diagnostics.', 'threshold service start'],
+  'service status': ['', 'Inspect service availability without changing it. Distinguishes running, stopped, stale markers, and unconfirmed state. Does not establish old worker exit.', 'threshold service status'],
   serve: ['[--agent-dir PATH] [--port 8765] [--max-parallel-runs 3] [--max-runs 100]', 'Start the foreground local service. Keep this terminal open. Pi config defaults to ~/.pi/agent. Background Runs have a 3-minute limit. Interactive Runs stay alive until stopped, including while waiting for input; max-runs counts all historical starts in this home.', 'threshold serve'],
   'service stop': ['', 'Stop this service and all its managed workers. Does not delete Project data.', 'threshold service stop'],
-  'project create': ['[--repo PATH] [--name NAME]', 'Register the current Git root (or --repo). An already registered root is returned unchanged.', 'threshold project create'],
-  board: ['[--project ID]', 'Show the current repository Project, Tasks and shared Run limits. Outside a registered repository, specify --project.', 'threshold board'],
-  'task create': ['--title TEXT (--instructions TEXT | --instructions-file PATH) [--project ID]', 'Create a Task in the current repository Project or the explicitly selected Project.', 'threshold task create --title "Fix parser" --instructions-file task.md'],
+  'project create': ['[--repo PATH] [--name NAME] [--init-git]', 'Register an existing folder. In a terminal, ask for its absolute path and offer Git initialization when needed. Scripts use --repo and explicitly --init-git for a non-Git folder. An already registered root is returned unchanged.', 'threshold project create --repo "E:/my-project"'],
+  board: ['[--project ID]', 'Show the current repository Project, Tasks and shared Run limits. Outside a registered repository, a terminal offers Project selection; scripts specify --project.', 'threshold board'],
+  'task create': ['[--title TEXT] [--instructions TEXT | --instructions-file PATH] [--project ID]', 'Create a Task. A terminal asks for missing title/instructions and lets you select a Project. Scripts must supply flags.', 'threshold task create'],
   'task update': ['--task ID --status in_progress|done --note TEXT [--project ID]', 'Record your Task assessment. This does not stop a Run or grant a Human Decision.', 'threshold task update --task a1b2 --status done --note "Tests passed; delivery checked"'],
-  run: ['--task ID --provider NAME --model NAME [--attach] [--objective TEXT] [--workspace PATH] [--skill PATH] [--extension PATH] [--project ID]', 'Start a fresh Pi session. Default: background work, return immediately, exit after Pi settles. --attach: start an interactive worker that waits for further input until run stop. Detaching never changes this startup policy. Repeat skill/extension flags for this Run only; next Run inherits none. Provider credentials come from Pi config/service environment.', 'threshold run --task a1b2 --provider deepseek --model deepseek-flash --attach'],
+  run: ['[--task ID] [--provider NAME] [--model NAME] [--attach] [--objective TEXT] [--workspace PATH] [--skill PATH] [--extension PATH] [--project ID]', 'Start a fresh Pi session. In a terminal, choose missing Task/provider/model and optional Run-local capability paths. Scripts/--json must supply task/provider/model. Default: background work, return immediately, exit after Pi settles. --attach waits for further input until run stop. Detaching never changes the startup policy. Repeat skill/extension flags to compose; next Run inherits none. Credentials come from Pi config/service environment.', 'threshold run --attach'],
   'run attach': ['ID | --run ID', 'Observe and talk to an existing live Run. Enter sends input; /detach or Ctrl+C leaves the view without stopping the worker. Working input is queued at a Pi tool boundary; idle input starts another round. Does not extend a background Run lifetime. Non-TTY and --json return one public-activity snapshot without consuming stdin. Activity is bounded, in memory only, and unavailable after service restart.', 'threshold run attach c3d4'],
   'run stop': ['ID | --run ID', 'Interrupt one Run. Its exit does not establish descendant or external-effect state. Does not stop the service.', 'threshold run stop c3d4'],
   'run recover': ['FULL_RUN_ID --confirm-reusable --note TEXT', 'Release an unknown Run\'s stale slot/worktree only after you independently checked that the old worker is gone and the workspace is reusable. Requires a full Run ID (or --run FULL_RUN_ID). Records a client confirmation; does not stop a process, restore a conversation, establish external effects or change the unknown outcome. Repeating keeps the original recovery note/time.', 'threshold run recover FULL_RUN_ID --confirm-reusable --note "Checked old worker is gone and workspace is reusable"'],
@@ -27,10 +30,10 @@ const commands = {
 };
 export const commandNames = Object.keys(commands);
 const groups = [
-  ['Start here', [['serve', 'Start the local service'], ['project create', 'Connect this Git repository'], ['task create', 'Give the project a task'], ['run', 'Start a fresh worker'], ['status', 'See where the work stands']]],
+  ['Start here', [['setup', 'Configure a model and API key'], ['service start', 'Start service in the background'], ['project create', 'Choose a project folder'], ['task create', 'Give the project a task'], ['run --attach', 'Choose a task and start chatting'], ['status', 'See where the work stands']]],
   ['Work together', [['run attach ID', 'See and talk to a live worker'], ['task update', 'Record a work assessment'], ['message read / send', 'Exchange project notes'], ['board', 'See tasks and runs together']]],
   ['Stop something', [['run stop ID', 'One worker'], ['service stop', 'Service and managed workers']]],
-  ['When needed', [['run recover ID', 'Release manually checked stale occupancy'], ['decision', 'Human decision for fake_deploy'], ['--json', 'Machine-readable output'], ['--home PATH', 'Choose another data directory'], ['--version', 'Show the installed version']]],
+  ['When needed', [['service status', 'Inspect service availability'], ['serve', 'Foreground service / diagnostics'], ['run recover ID', 'Release manually checked stale occupancy'], ['decision', 'Human decision for fake_deploy'], ['--json', 'Machine-readable output'], ['--home PATH', 'Choose another data directory'], ['--version', 'Show the installed version']]],
 ];
 
 export function help(command = '', options = {}) {
@@ -40,7 +43,7 @@ export function help(command = '', options = {}) {
   const rows = !command ? [f.logo()+f.title('threshold', options.version), 'Project persists. Agents come and go.',
     ...groups.flatMap(([title, entries]) => ['', f.text('head', title), ...entries.map(([name, description]) =>
       (options.columns ?? 80) < 72 ? `  ${f.text(title === 'Start here' ? 'accent' : '', name)}\n    ${description}` : `  ${f.text(title === 'Start here' ? 'accent' : '', name.padEnd(24))}${description}`)]),
-    '', f.text('dim', 'Details and examples: threshold COMMAND --help'), f.command('threshold serve')]
+    '', f.text('dim', 'Details and examples: threshold COMMAND --help'), f.command('threshold service start'), f.text('dim', 'Foreground diagnostics: threshold serve')]
     : entry ? [f.title(`threshold ${command}`), f.text('dim', entry[0]), '', entry[1], '', f.text('head', 'Example'), f.command(entry[2])]
       : [f.title(`threshold ${command}`), '', ...children.flatMap(name => [f.command(`threshold ${name} ${commands[name][0]}`), ''])];
   return [...rows, '', f.text('dim', 'Global: --home PATH  --json  --help  --version  --ascii  --no-color'),
@@ -62,6 +65,14 @@ export function display(value, options = {}) {
     ...(run.workspace_path ? ['  '+t('dim', run.workspace_path)] : [])];
   const messageRows = message => [f.title(`#${message.id}`, `${message.source}${message.from_run_id ? ' / run '+id(message.from_run_id) : ''}${message.created_at ? ' / '+message.created_at : ''}`), t('', message.body), ''];
 
+  if (value.state && value.home) return [f.title('Service', value.state),
+    ...(value.url ? [t('accent', value.url)] : []),
+    ...(value.alreadyRunning ? [t('dim', 'Existing service reused; startup options were not changed.')] : []),
+    f.pair('Home', value.home, 'dim'), ...(value.agentDir ? [f.pair('Pi config', value.agentDir, 'dim')] : []), '',
+    ...(value.state === 'running' ? ['This terminal is free for work. Model connectivity is not verified.', f.command('threshold project create'), f.command('threshold service stop')]
+      : value.state === 'stopped' ? [t('dim', 'No service discovered from runtime markers; missing markers do not prove process exit.'), f.command('threshold service start')]
+      : [t('warn', value.state === 'stale' ? 'Old runtime markers remain. Check old workers before removing server.lock/server.json; keep project data.'
+        : 'Availability is unconfirmed. Inspect the recorded process before restarting.')])].join('\n');
   if (value.listening) return [f.logo()+f.title('threshold', 'local project service'), '',
     t('ok', 'Service listening at '+value.listening), '', f.pair('Home', value.home, 'dim'),
     ...(options.agentDir ? [f.pair('Pi config', options.agentDir, 'dim')] : []),
@@ -79,7 +90,7 @@ export function display(value, options = {}) {
     t('dim', `${value.resources.started} / ${value.resources.maxRuns} historical starts; ${value.resources.remainingStarts} remaining`),
     t('dim', 'Across all Projects in this service home.'), '',
     t('dim', value.tasks.length ? 'Checkpoint/objective previews only; inspect a Task for full text.' : 'Create the first Task in this Project.'),
-    f.command(value.tasks.length ? 'threshold status --task ID' : `threshold task create --project ${id(value.project.id)} --title "..." --instructions "..."`)].join('\n');
+    f.command(value.tasks.length ? 'threshold run --attach' : `threshold task create --project ${id(value.project.id)}`)].join('\n');
   if (value.task) return [f.title(value.task.title, id(value.task.id)), `${t('', value.task.status)}  ${t('dim', 'work assessment')}`,
     f.pair('Project', `${value.project.name} / ${id(value.project.id)}`), t('dim', value.project.repo_path),
     section('Task'), t('', value.task.instructions), section('Checkpoint'),
@@ -91,8 +102,8 @@ export function display(value, options = {}) {
     ...(options.unregisteredRepo ? [f.title('No Project here yet'), t('dim', options.unregisteredRepo), '', f.command('threshold project create'), ''] : []),
     t('head', 'Projects:'), ...(value.projects.length ? value.projects.flatMap(project => [f.title(project.name, id(project.id)), '  '+t('dim', project.repo_path)]) : [t('dim', 'None registered.')]),
     section('Tasks:'), ...(value.tasks.length ? value.tasks.map(task => f.title(task.title, `${id(task.id)} / ${task.status}`)) : [t('dim', 'None yet.')]), '',
-    f.command(value.projects.length ? 'threshold board --project ID' : 'threshold project create'),
-    ...(value.tasks.length ? [f.command('threshold status --task ID')] : [])].join('\n');
+    f.command(value.projects.length === 1 ? `threshold board --project ${id(value.projects[0].id)}` : value.projects.length ? 'threshold board' : 'threshold project create'),
+    ...(value.tasks.length ? [f.command('threshold run --attach')] : [])].join('\n');
   if (value.messages) return [f.title('Messages', 'task '+id(value.taskId)), '', ...value.messages.flatMap(messageRows),
     t('dim', `${value.messages.length} message(s) shown. ${value.hasMore ? 'More available.' : 'No further messages at this observation.'}`),
     ...(value.hasMore ? [f.command(`threshold message read --task ${id(value.taskId)} --after ${value.nextAfter}`)] : []),
@@ -129,9 +140,9 @@ export function display(value, options = {}) {
     return rows.join('\n');
   }
   if (value.repo_path) return [f.title(value.name, 'project '+id(value.id)), t('dim', value.repo_path), '',
-    f.command('threshold task create --title "..." --instructions "..."')].join('\n');
+    f.command(`threshold task create --project ${id(value.id)}`)].join('\n');
   if (value.title && value.project_id) return [f.title(value.title, id(value.id)), `${t('', value.status)}  ${t('dim', 'work assessment')}`, '',
-    f.pair('Full Task ID', value.id, 'dim'), f.command(`threshold status --task ${id(value.id)}`)].join('\n');
+    f.pair('Full Task ID', value.id, 'dim'), f.command(`threshold run --task ${id(value.id)} --attach`), f.command(`threshold status --task ${id(value.id)}`)].join('\n');
   if (value.body) return [f.title('Message saved'), '', ...messageRows(value)].join('\n');
   if (value.action === 'fake_deploy' && value.decision) return [f.title('Human decision / fake_deploy'), f.pair('Decision', value.decision), f.pair('Target', value.target), f.pair('Task', id(value.taskId)), t('dim', 'Local fake deployment only.')].join('\n');
   return t('', JSON.stringify(value, null, 2));

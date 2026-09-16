@@ -31,7 +31,7 @@ Capability selection is shown separately from observed tool use. [Start here](#i
 
 ## Install
 
-You need **Node 24.18+**, npm, Git, and a working Pi provider/model configuration.
+You need **Node 24.18+**, npm, Git, and a provider account/API key (or an existing Pi login).
 Windows workers need Git for Windows Bash. Linux/macOS use is not yet fully validated.
 Pi is pinned to **0.85.1** and installed as a dependency.
 
@@ -43,7 +43,7 @@ threshold --version
 threshold --help
 ```
 
-The published release is **0.2.0-alpha.1**. To pin it, use `threshold-lite@0.2.0-alpha.1` instead of `threshold-lite@alpha`.
+This release is **0.2.0-alpha.2**. To pin it, use `threshold-lite@0.2.0-alpha.2` instead of `threshold-lite@alpha`.
 For a user-writable installation directory, use `npm install -g --prefix PATH threshold-lite@alpha`
 and put `PATH` (Windows) or `PATH/bin` (Linux/macOS) on your shell's PATH.
 
@@ -55,31 +55,66 @@ From a source checkout:
 ```sh
 npm ci
 npm pack
-npm install -g ./threshold-lite-0.2.0-alpha.1.tgz
+npm install -g ./threshold-lite-0.2.0-alpha.2.tgz
 ```
 
 If you already have a `.tgz` package, use `npm install -g PATH_TO_PACKAGE.tgz`.
 
 </details>
 
-## Start a service
+## First conversation — one terminal
 
-Use your existing Pi configuration in `~/.pi/agent`, or a separate directory with `--agent-dir`.
-If this is your first Pi setup, see the short [provider setup](docs/user-guide.md#provider-setup).
-Credentials belong in your normal provider setup or the service process environment, never in a Task.
+Run each command separately and finish its prompts before entering the next command.
+First, configure a model (skip this if Pi is already configured):
 
 ```sh
-threshold serve
-# With a separate Pi configuration:
-# threshold serve --agent-dir PATH_TO_PI_CONFIG
+threshold setup
 ```
 
-Keep that terminal open. The service prints its address and data directory. Open a second terminal for work.
+Enter a provider such as `deepseek`, a model ID such as `deepseek-flash`, and your API key
+at the hidden prompt. The key is saved in Pi's local **plaintext** `auth.json`, never in Project
+records. Setup makes no model call. See [provider setup](docs/user-guide.md#provider-setup)
+for existing logins, environment variables and custom configuration directories.
+
+Start the service in the background; this returns to the same terminal:
+
+```sh
+threshold service start
+```
+
+Create a folder yourself, or choose an existing project folder. Then register it:
+
+```sh
+threshold project create
+```
+
+Enter its absolute path, for example `E:\my-project` on Windows or `/home/me/my-project`
+on Linux. If Git is not initialized, answer `y` to the initialization question; pressing
+Enter means no. Existing files are kept.
+
+Create a Task and answer the title/instructions prompts:
+
+```sh
+threshold task create
+```
+
+Choose that Task, select a model, and start chatting:
+
+```sh
+threshold run --attach
+```
+
+Optional Skill/Extension prompts can be left blank. No optional capabilities are needed.
+Enter sends a message; `/detach` leaves the view while the worker continues. Use
+`threshold run stop RUN_ID` when you want to end that worker.
+
+`threshold service status` inspects the service. `threshold serve` remains available for foreground
+diagnostics; only that mode needs a separate terminal for client commands.
 Default data location is stable when you change directories: Windows `%LOCALAPPDATA%/Threshold`,
 macOS `~/Library/Application Support/Threshold`, Linux `$XDG_STATE_HOME/threshold` or `~/.local/state/threshold`.
 `--home PATH` overrides it; every command targeting that instance needs the same override.
 
-## Work in a project
+## Work with explicit commands
 
 Enter your project's Git repository (initialize one with `git init` if needed):
 
@@ -120,15 +155,15 @@ Background Runs have a **3-minute** turn limit; interactive Runs have no fixed c
 Default service limits are **3 unsettled Runs** and
 **100 historical starts per data directory**. These are startup limits, not token or spending budgets.
 An interactive worker waiting for input still occupies its slot and worktree.
-`threshold serve --help` explains the configuration. The same managed worktree cannot have two unsettled workers.
+`threshold service start --help` explains the configuration. The same managed worktree cannot have two unsettled workers.
 
 ## Come back later
 
 ```sh
 threshold service stop
 # Later, possibly in a new terminal:
-threshold serve
-# In another terminal, anywhere inside the same project:
+threshold service start
+# In the same terminal, anywhere inside the same project:
 threshold status
 threshold status --task TASK_ID
 threshold run --task TASK_ID --provider deepseek --model deepseek-flash --objective "Inspect the current project and checkpoint, then complete the next useful part."
@@ -145,6 +180,22 @@ Bare `threshold stop` takes no action and explains the choice. Project data is r
 After an unclean restart, an `unknown` Run still holds its slot/worktree. Once you independently confirm
 the old worker is gone and the workspace is reusable, use [explicit workspace recovery](docs/user-guide.md#recover-an-unknown-runs-workspace).
 The old Run outcome remains unknown.
+
+## Upgrade
+
+When ready to end the current workers, stop the service normally, update the package, and restart:
+
+```sh
+threshold service stop
+npm install -g threshold-lite@alpha
+threshold --version
+threshold service start
+```
+
+Use your existing `--home` and `--agent-dir` overrides if applicable. Project history is retained;
+this release adds no database migration. A running service does not update just because npm installed
+a newer CLI. See [troubleshooting](docs/user-guide.md#technical-errors-and-stopping) before deleting
+any runtime marker or retrying a failed startup.
 
 ## More, when needed
 

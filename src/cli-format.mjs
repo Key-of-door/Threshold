@@ -69,7 +69,7 @@ export function format(options = {}) {
 export function displayError(message, options = {}) {
   const f = format({ ...options, home: message.cliHome ?? options.home });
   if (message.cliHome) return [f.text('error', '! Service address unavailable'), 'No readable service address in the selected home.', '',
-    f.pair('Home', message.cliHome), '', f.text('head', 'Start the service in another terminal'), f.command('threshold serve'), '',
+    f.pair('Home', message.cliHome), '', f.text('head', 'Start the service'), f.command('threshold service start'), f.text('dim', 'For foreground diagnostics: threshold serve'), '',
     f.text('dim', 'Use the same --home on both commands if you selected another home.'),
     f.text('dim', 'If Pi uses a separate config, add --agent-dir PATH when starting it.')].join('\n');
   return `${f.text('error', '!')} ${f.text('', message.message ?? message)}`;

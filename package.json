@@ -1,6 +1,6 @@
 {
   "name": "threshold-lite",
-  "version": "0.2.0-alpha.1",
+  "version": "0.2.0-alpha.2",
   "description": "A small local project service for persistent collaboration across independent Pi agent sessions.",
   "license": "Apache-2.0",
   "repository": {
@@ -11,7 +11,13 @@
     "url": "https://github.com/Key-of-door/Threshold/issues"
   },
   "homepage": "https://github.com/Key-of-door/Threshold#readme",
-  "keywords": ["agent", "cli", "collaboration", "project", "pi"],
+  "keywords": [
+    "agent",
+    "cli",
+    "collaboration",
+    "project",
+    "pi"
+  ],
   "type": "module",
   "engines": {
     "node": ">=24.18.0"

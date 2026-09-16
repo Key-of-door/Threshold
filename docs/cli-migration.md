@@ -1,5 +1,27 @@
 # From the 0.1 prototype to 0.2 alpha
 
+## 0.2.0-alpha.2: guided onboarding
+
+- `setup` is an interactive wrapper around Pi model/default/credential configuration.
+- `service start` runs the service in the background; `serve` retains its foreground behavior.
+  `service status` reports availability. Stale markers and unknown workers are never automatically recovered.
+- Terminal-only selection fills missing Project/Task/provider/model fields. Pipes and `--json`
+  retain explicit required flags and do not read stdin. Default Run policy remains background.
+- `project create --repo PATH` requires an explicitly chosen folder to be the Git root. This
+  avoids registering a parent when the user selected a nested directory. Cwd-based noninteractive
+  registration still finds its Git root. `--init-git` explicitly allows initializing a non-Git folder.
+- Model/credential preflight happens before ordinary Run creation. Selected extensions may define
+  their own providers, so their provider resolution remains with Pi.
+- No DB migration, new Project entity, capability discovery or global activation is introduced.
+  Existing successful command JSON shapes stay the same; service/model inspection commands are new.
+- A failed port bind now exits before opening the project database, so a rejected duplicate startup
+  cannot mark existing Runs unknown. Missing runtime markers still require explicit diagnosis.
+
+Stop the old service when ready to end its workers, update the npm package, then start the service
+again with the same home/configuration. npm installation alone does not upgrade a running service.
+
+## Earlier changes
+
 - Default home is now a stable OS user directory, not cwd-relative `.local/threshold`.
   Existing data is not moved. Continue it with an absolute `--home PATH` on serve and every client command.
 - Output defaults to human-readable text. Scripts must pass `--json`; response data and full IDs remain
