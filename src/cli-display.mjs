@@ -16,6 +16,8 @@ const commands = {
   serve: ['[--agent-dir PATH] [--port 8765] [--max-parallel-runs 3] [--max-runs 100]', 'Start the foreground local service. Keep this terminal open. Pi config defaults to ~/.pi/agent. Background Runs have a 3-minute limit. Interactive Runs stay alive until stopped, including while waiting for input; max-runs counts all historical starts in this home.', 'threshold serve'],
   'service stop': ['', 'Stop this service and all its managed workers. Does not delete Project data.', 'threshold service stop'],
   'project create': ['[--repo PATH] [--name NAME] [--init-git]', 'Register an existing folder. In a terminal, ask for its absolute path and offer Git initialization when needed. Scripts use --repo and explicitly --init-git for a non-Git folder. An already registered root is returned unchanged.', 'threshold project create --repo "E:/my-project"'],
+  'project archive': ['ID | --project ID', 'Hide a Project and its Tasks from the default index and selection menus. Keep files, history and IDs. Active or unresolved Runs must be handled first; this command does not stop workers. Archived Projects cannot start new Tasks or Runs.', 'threshold project archive a1b2'],
+  'project restore': ['ID | --project ID', 'Show an archived Project again and allow new work. Preserves its original ID and history. Find archived IDs with status --all --include-archived.', 'threshold project restore a1b2'],
   board: ['[--project ID]', 'Show the current repository Project, Tasks and shared Run limits. Outside a registered repository, a terminal offers Project selection; scripts specify --project.', 'threshold board'],
   'task create': ['[--title TEXT] [--instructions TEXT | --instructions-file PATH] [--project ID]', 'Create a Task. A terminal asks for missing title/instructions and lets you select a Project. Scripts must supply flags.', 'threshold task create'],
   'task update': ['--task ID --status in_progress|done --note TEXT [--project ID]', 'Record your Task assessment. This does not stop a Run or grant a Human Decision.', 'threshold task update --task a1b2 --status done --note "Tests passed; delivery checked"'],
@@ -23,7 +25,7 @@ const commands = {
   'run attach': ['ID | --run ID', 'Observe and talk to an existing live Run. Enter sends input; /detach or Ctrl+C leaves the view without stopping the worker. Working input is queued at a Pi tool boundary; idle input starts another round. Does not extend a background Run lifetime. Non-TTY and --json return one public-activity snapshot without consuming stdin. Activity is bounded, in memory only, and unavailable after service restart.', 'threshold run attach c3d4'],
   'run stop': ['ID | --run ID', 'Interrupt one Run. Its exit does not establish descendant or external-effect state. Does not stop the service.', 'threshold run stop c3d4'],
   'run recover': ['FULL_RUN_ID --confirm-reusable --note TEXT', 'Release an unknown Run\'s stale slot/worktree only after you independently checked that the old worker is gone and the workspace is reusable. Requires a full Run ID (or --run FULL_RUN_ID). Records a client confirmation; does not stop a process, restore a conversation, establish external effects or change the unknown outcome. Repeating keeps the original recovery note/time.', 'threshold run recover FULL_RUN_ID --confirm-reusable --note "Checked old worker is gone and workspace is reusable"'],
-  status: ['[--task ID | --run ID | --project ID] [--all]', 'Show the current Project when recognized, otherwise the Project index. Select Task for its full checkpoint, Run for execution detail. --all shows the global index.', 'threshold status --task a1b2'],
+  status: ['[--task ID | --run ID | --project ID] [--all] [--include-archived]', 'Show the current Project when recognized, otherwise the active Project index. Select Task for its full checkpoint, Run for execution detail. --all shows the global index; --include-archived shows the global index including archived Projects. Direct ID and current-repository inspection still show archived history.', 'threshold status --task a1b2'],
   'message read': ['--task ID [--after 0] [--limit 10] [--project ID]', 'Read persistent Task messages without consuming them. Follow nextAfter when hasMore is true.', 'threshold message read --task a1b2'],
   'message send': ['--task ID (--body TEXT | --body-file PATH) [--project ID]', 'Append a collaboration message. A message is not a Human Decision.', 'threshold message send --task a1b2 --body "Please review the actual diff"'],
   decision: ['--task ID --target staging|preview --value allow|deny [--project ID]', 'Human CLI only: record a decision for the local fake_deploy example. Not a real deployment. Agents must not use this to impersonate Human approval.', 'threshold decision --task a1b2 --target staging --value allow'],
@@ -33,7 +35,7 @@ const groups = [
   ['Start here', [['setup', 'Configure a model and API key'], ['service start', 'Start service in the background'], ['project create', 'Choose a project folder'], ['task create', 'Give the project a task'], ['run --attach', 'Choose a task and start chatting'], ['status', 'See where the work stands']]],
   ['Work together', [['run attach ID', 'See and talk to a live worker'], ['task update', 'Record a work assessment'], ['message read / send', 'Exchange project notes'], ['board', 'See tasks and runs together']]],
   ['Stop something', [['run stop ID', 'One worker'], ['service stop', 'Service and managed workers']]],
-  ['When needed', [['service status', 'Inspect service availability'], ['serve', 'Foreground service / diagnostics'], ['run recover ID', 'Release manually checked stale occupancy'], ['decision', 'Human decision for fake_deploy'], ['--json', 'Machine-readable output'], ['--home PATH', 'Choose another data directory'], ['--version', 'Show the installed version']]],
+  ['When needed', [['project archive/restore', 'Put away or return to a project'], ['service status', 'Inspect service availability'], ['serve', 'Foreground service / diagnostics'], ['run recover ID', 'Release manually checked stale occupancy'], ['decision', 'Human decision for fake_deploy'], ['--json', 'Machine-readable output'], ['--home PATH', 'Choose another data directory'], ['--version', 'Show the installed version']]],
 ];
 
 export function help(command = '', options = {}) {
@@ -64,6 +66,14 @@ export function display(value, options = {}) {
     ...(run.workspace_recovery ? ['  '+t('dim', 'Workspace manually confirmed reusable; old outcome unknown.')] : []),
     ...(run.workspace_path ? ['  '+t('dim', run.workspace_path)] : [])];
   const messageRows = message => [f.title(`#${message.id}`, `${message.source}${message.from_run_id ? ' / run '+id(message.from_run_id) : ''}${message.created_at ? ' / '+message.created_at : ''}`), t('', message.body), ''];
+  const archiveRows = project => project.archived_at ? [t('dim', 'Archived / history retained'),
+    f.command(`threshold project restore ${id(project.id)}`)] : [];
+  const gitRows = observation => !observation ? [] : [section('Current Git'),
+    ...(observation.error ? [t('warn', observation.error)] : [
+      f.pair('Branch', observation.branch || 'Detached HEAD'),
+      f.pair('HEAD', observation.head === null ? 'No commits yet' : observation.head, 'dim'),
+      t('', observation.status || 'Working tree clean.')]),
+    ...(observation.workspace_path ? [f.pair('Workspace', observation.workspace_path, 'dim')] : [])];
 
   if (value.state && value.home) return [f.title('Service', value.state),
     ...(value.url ? [t('accent', value.url)] : []),
@@ -80,6 +90,7 @@ export function display(value, options = {}) {
     t('dim', 'Keep this terminal open. Stop service + managed workers:'), f.command('threshold service stop')].join('\n');
   if (value.shuttingDown) return [f.title('Service shutdown requested'), 'Managed workers are being stopped. Project data is retained.'].join('\n');
   if (value.resources) return [f.title(value.project.name, 'project '+id(value.project.id)), t('dim', value.project.repo_path),
+    ...archiveRows(value.project),
     section(value.tasks.length ? 'Work' : 'No Tasks yet'),
     ...value.tasks.flatMap(task => ['', f.title(task.title, id(task.id)), t('dim', `${task.status} / work assessment`),
       ...(task.latestRun ? runRows(task.latestRun, true) : [t('dim', 'No Runs yet.')]),
@@ -89,21 +100,24 @@ export function display(value, options = {}) {
     section('Service budget'), t('dim', `${value.resources.unsettled} unsettled / ${value.resources.maxParallelRuns} slots`),
     t('dim', `${value.resources.started} / ${value.resources.maxRuns} historical starts; ${value.resources.remainingStarts} remaining`),
     t('dim', 'Across all Projects in this service home.'), '',
-    t('dim', value.tasks.length ? 'Checkpoint/objective previews only; inspect a Task for full text.' : 'Create the first Task in this Project.'),
-    f.command(value.tasks.length ? 'threshold run --attach' : `threshold task create --project ${id(value.project.id)}`)].join('\n');
+    t('dim', value.tasks.length ? 'Checkpoint/objective previews only; inspect a Task for full text.' : value.project.archived_at ? 'Restore this Project to start new work.' : 'Create the first Task in this Project.'),
+    ...(value.project.archived_at ? [] : [f.command(value.tasks.length ? 'threshold run --attach' : `threshold task create --project ${id(value.project.id)}`)])].join('\n');
   if (value.task) return [f.title(value.task.title, id(value.task.id)), `${t('', value.task.status)}  ${t('dim', 'work assessment')}`,
     f.pair('Project', `${value.project.name} / ${id(value.project.id)}`), t('dim', value.project.repo_path),
+    ...archiveRows(value.project),
     section('Task'), t('', value.task.instructions), section('Checkpoint'),
     ...(value.checkpoint ? [t('dim', `Agent summary / run ${id(value.checkpoint.run_id)}${value.checkpoint.created_at ? ' / '+value.checkpoint.created_at : ''}`), t('', value.checkpoint.summary)] : [t('dim', 'Not saved yet.')]),
     section('Recent Runs'), ...(value.recentRuns.length ? value.recentRuns.flatMap(run => runRows(run)) : [t('dim', 'None yet.')]),
+    ...gitRows(value.currentGit),
     section('Messages'), `${value.messageInbox.count} available`, f.command(`threshold message read --task ${id(value.task.id)}`), '',
     t('dim', 'Run ending does not change the Task assessment.')].join('\n');
   if (value.projects) return [
     ...(options.unregisteredRepo ? [f.title('No Project here yet'), t('dim', options.unregisteredRepo), '', f.command('threshold project create'), ''] : []),
-    t('head', 'Projects:'), ...(value.projects.length ? value.projects.flatMap(project => [f.title(project.name, id(project.id)), '  '+t('dim', project.repo_path)]) : [t('dim', 'None registered.')]),
+    t('head', 'Projects:'), ...(value.projects.length ? value.projects.flatMap(project => [f.title(project.name, `${id(project.id)}${project.archived_at ? ' / archived' : ''}`), '  '+t('dim', project.repo_path)]) : [t('dim', 'No active Projects. Archived history may still exist.')]),
     section('Tasks:'), ...(value.tasks.length ? value.tasks.map(task => f.title(task.title, `${id(task.id)} / ${task.status}`)) : [t('dim', 'None yet.')]), '',
     f.command(value.projects.length === 1 ? `threshold board --project ${id(value.projects[0].id)}` : value.projects.length ? 'threshold board' : 'threshold project create'),
-    ...(value.tasks.length ? [f.command('threshold run --attach')] : [])].join('\n');
+    ...(value.tasks.some(task => value.projects.some(project => project.id === task.project_id && !project.archived_at)) ? [f.command('threshold run --attach')] : []),
+    f.command('threshold status --all --include-archived')].join('\n');
   if (value.messages) return [f.title('Messages', 'task '+id(value.taskId)), '', ...value.messages.flatMap(messageRows),
     t('dim', `${value.messages.length} message(s) shown. ${value.hasMore ? 'More available.' : 'No further messages at this observation.'}`),
     ...(value.hasMore ? [f.command(`threshold message read --task ${id(value.taskId)} --after ${value.nextAfter}`)] : []),
@@ -133,14 +147,14 @@ export function display(value, options = {}) {
       rows.push(f.pair('Tool calls', observed.toolCalls), t('', (observed.toolNames ?? []).join(', ') || 'No tool names observed.'));
       if (observed.availableSkills) rows.push(t('dim', `Skill catalog observed: ${observed.availableSkills.length} entries. This does not establish execution.`));
     }
-    rows.push(t('dim', 'Selection does not establish extension loading or execution.'), '', f.pair('Full Run ID', value.id, 'dim'),
+    rows.push(t('dim', 'Selection does not establish extension loading or execution.'), ...gitRows(value.currentGit), '', f.pair('Full Run ID', value.id, 'dim'),
       t('dim', 'This is a snapshot.'), f.command(`threshold status --run ${id(value.id)}`), f.command(`threshold status --task ${id(value.task_id)}`));
     if (['starting', 'running'].includes(value.status)) rows.push(f.command(`threshold run stop ${id(value.id)}`));
     if (value.status === 'unknown' && !value.workspace_recovery) rows.push(t('dim', 'Still holds a slot/worktree. Independently check the old worker and workspace before recovery.'), f.command('threshold run recover --help'));
     return rows.join('\n');
   }
   if (value.repo_path) return [f.title(value.name, 'project '+id(value.id)), t('dim', value.repo_path), '',
-    f.command(`threshold task create --project ${id(value.id)}`)].join('\n');
+    ...(value.archived_at ? archiveRows(value) : [f.command(`threshold task create --project ${id(value.id)}`)])].join('\n');
   if (value.title && value.project_id) return [f.title(value.title, id(value.id)), `${t('', value.status)}  ${t('dim', 'work assessment')}`, '',
     f.pair('Full Task ID', value.id, 'dim'), f.command(`threshold run --task ${id(value.id)} --attach`), f.command(`threshold status --task ${id(value.id)}`)].join('\n');
   if (value.body) return [f.title('Message saved'), '', ...messageRows(value)].join('\n');

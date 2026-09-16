@@ -16,7 +16,8 @@ test('v1 migration preserves existing project/checkpoint/decision and keeps old 
   old.exec(readFileSync(new URL('./fixtures/state-v1.sql', import.meta.url), 'utf8')); old.close();
   const store = openStore(path);
   try {
-    assert.equal(store.db.prepare('PRAGMA user_version').get().user_version, 6);
+    assert.equal(store.db.prepare('PRAGMA user_version').get().user_version, 7);
+    assert.equal(store.context('t').project.archived_at, null);
     assert.equal(store.run('r').capabilities, null);
     assert.equal(store.context('t').checkpoint.id, 'c');
     assert.equal(store.context('t').checkpoint.git.head, 'existing-head');

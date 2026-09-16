@@ -83,6 +83,8 @@ export async function startService({ home, agentDir, port = 8765, workerFactory 
     };
     async function launch(taskId, provider, model, objective, skills, extensions, workspace, startedBy = null, interactive = false) {
       if (typeof interactive !== 'boolean') throw problem(400, 'interactive must be a boolean');
+      const project = store.project(store.task(taskId).project_id);
+      if (project.archived_at) throw problem(409, `Project is archived. Run threshold project restore ${project.id} before starting new work.`);
       // A selected Pi extension may register its own provider/auth at startup.
       // Let Pi resolve that path; generic preflight cannot assume its semantics.
       if (workerFactory === startPi && !extensions?.length) {
@@ -252,7 +254,11 @@ export async function startService({ home, agentDir, port = 8765, workerFactory 
           return reply(200, store.decide(text(data.taskId, 'taskId'), target(data.target), data.decision));
         }
         // Compact index only; full Task detail stays on GET /tasks/:id.
-        if (method === 'GET' && path === '/status') return reply(200, store.statusIndex());
+        if (method === 'GET' && path === '/status') {
+          const includeArchived = requestUrl.searchParams.get('includeArchived');
+          if (includeArchived !== null && !['true', 'false'].includes(includeArchived)) throw problem(400, 'includeArchived must be true or false');
+          return reply(200, store.statusIndex(includeArchived === 'true'));
+        }
         if (method === 'GET' && path === '/models') {
           try { return reply(200, await modelChoices(agentDir)); }
           catch (error) { throw problem(400, error.message); }
@@ -266,6 +272,13 @@ export async function startService({ home, agentDir, port = 8765, workerFactory 
         }
         const projectBoard = path.match(/^\/projects\/([^/]+)\/board$/);
         if (method === 'GET' && projectBoard) return reply(200, board(projectBoard[1]));
+        const projectArchive = path.match(/^\/projects\/([^/]+)\/(archive|restore)$/);
+        if (method === 'POST' && projectArchive) {
+          await body(req);
+          if (projectArchive[2] === 'archive' && [...jobs.entries()].some(([id, job]) => job.active && store.task(store.run(id).task_id).project_id === projectArchive[1]))
+            throw problem(409, 'Project still has an active worker. Stop it before archiving. No worker was stopped.');
+          return reply(200, projectArchive[2] === 'archive' ? store.archiveProject(projectArchive[1]) : store.restoreProject(projectArchive[1]));
+        }
         if (method === 'POST' && path === '/projects') {
           const data = await body(req);
           const repo = realpathSync(text(data.repoPath, 'repoPath'));

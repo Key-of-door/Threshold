@@ -23,10 +23,11 @@ async function main() {
     ({ values: args, positionals: commands } = parseArgs({ allowPositionals: true, options: {
       ...Object.fromEntries(['home', 'agent-dir', 'port', 'name', 'repo', 'project', 'title', 'instructions', 'instructions-file', 'task', 'provider', 'model', 'run', 'target', 'value', 'objective', 'status', 'note', 'body', 'body-file', 'after', 'limit', 'workspace', 'max-parallel-runs', 'max-runs'].map(key => [key, { type: 'string' }])),
       skill: { type: 'string', multiple: true }, extension: { type: 'string', multiple: true },
-      ...Object.fromEntries(['summary', 'json', 'all', 'help', 'version', 'ascii', 'no-color', 'attach', 'confirm-reusable', 'init-git'].map(key => [key, { type: 'boolean' }])) } }));
+      ...Object.fromEntries(['summary', 'json', 'all', 'include-archived', 'help', 'version', 'ascii', 'no-color', 'attach', 'confirm-reusable', 'init-git'].map(key => [key, { type: 'boolean' }])) } }));
   } catch (error) { report(`${error.message}\nRun threshold --help.`); return 1; }
   if (args.version) { console.log(`threshold ${JSON.parse(readFileSync(new URL('../package.json', import.meta.url))).version}`); return 0; }
   const runPosition = commands[0] === 'run' && ['stop', 'attach', 'recover'].includes(commands[1]) && commands.length === 3 ? commands.pop() : undefined;
+  const projectPosition = commands[0] === 'project' && ['archive', 'restore'].includes(commands[1]) && commands.length === 3 ? commands.pop() : undefined;
   const command = commands.join(' ');
   const presentation = { ...terminalOptions(process.stdout, args), version: JSON.parse(readFileSync(new URL('../package.json', import.meta.url))).version, home: args.home && resolve(args.home) };
   if (!command || args.help) { console.log(help(command, presentation)); return command && !commandNames.includes(command) && !['project', 'task', 'message', 'service'].includes(command) ? 1 : 0; }
@@ -87,7 +88,7 @@ async function main() {
     const explicit = await explicitProject(); if (explicit) return explicit;
     let root;
     try { root = rootOf('.'); } catch (error) { if (optional) return undefined; throw error; }
-    const { projects } = await call('/status');
+    const { projects } = await call('/status?includeArchived=true');
     const matches = projects.filter(project => {
       try { return realpathSync(project.repo_path) === root; } catch { return false; }
     });
@@ -102,15 +103,20 @@ async function main() {
     if (optional) { unregisteredRepo = root; return undefined; }
     throw new Error(`No Project registered for ${root}. Run threshold project create.`);
   }
-  async function chooseProject() {
-    const current = await currentProject(true); if (current) return current;
+  async function chooseProject(activeOnly = false) {
+    const current = await currentProject(true); if (current && !activeOnly) return current;
     const { projects } = await call('/status');
-    if (!projects.length) throw new Error('No Projects yet. Run threshold project create --repo "ABSOLUTE_PATH".');
+    if (current) {
+      if (!projects.some(p => p.id === current)) throw new Error(`Project is archived. Run threshold project restore ${current} before starting new work.`);
+      return current;
+    }
+    if (!projects.length) throw new Error('No active Projects. Use threshold status --all --include-archived to find archived history, or threshold project create --repo "ABSOLUTE_PATH" to register a folder.');
     return ui().choose('Project', projects.map(p => ({ id: p.id, label: `${p.name} / ${p.repo_path}` })));
   }
   try {
     if (args.json && args.summary) throw new Error('Choose --json or --summary, not both.');
     if (args.attach && command !== 'run') throw new Error('--attach is a Run startup option. To connect later: threshold run attach ID.');
+    if (args['include-archived'] && command !== 'status') throw new Error('--include-archived is a status option. Use threshold status --all --include-archived.');
     const attach = async id => {
       const { attachRun } = await import('./cli-attach.mjs');
       return attachRun({ id, call, options: { ...presentation, json: args.json,
@@ -164,9 +170,13 @@ async function main() {
         git(folder, 'init'); repoPath = rootOf(folder);
       }
       if (requested && repoPath !== realpathSync(folder)) throw new Error(`This folder belongs to the parent Git repository ${repoPath}. Select that root explicitly; no Project was created.`);
-      const { projects } = await call('/status');
+      const { projects } = await call('/status?includeArchived=true');
       const existing = projects.find(p => { try { return realpathSync(p.repo_path) === repoPath; } catch { return false; } });
       print(existing ?? await call('/projects', { name: args.name ?? basename(repoPath), repoPath }));
+    } else if (command === 'project archive' || command === 'project restore') {
+      if (projectPosition && args.project) throw new Error(`Specify the Project once: threshold ${command} ID or --project ID.`);
+      const project = await lookup('project', projectPosition ?? required('project'));
+      print(await call(`/projects/${project}/${command.split(' ')[1]}`, {}));
     } else if (command === 'board') await boardDisplay(interactive ? await chooseProject() : await currentProject());
     else if (command === 'task create') {
       if (interactive) {
@@ -174,7 +184,7 @@ async function main() {
         if (args.instructions === undefined && args['instructions-file'] === undefined) args.instructions = await ui().ask('What should this task accomplish?', { required: true });
       }
       const title = required('title'), instructions = textInput('instructions');
-      print(await call('/tasks', { projectId: interactive ? await chooseProject() : await currentProject(), title, instructions }));
+      print(await call('/tasks', { projectId: interactive ? await chooseProject(true) : await currentProject(), title, instructions }));
     } else if (command === 'task update') {
       const task = required('task'), status = required('status'), note = required('note');
       print(await call(`/tasks/${await entity('task', task)}/status`, { status, note }));
@@ -184,16 +194,17 @@ async function main() {
     } else if (command === 'message read') print(await call(`/tasks/${await entity('task', required('task'))}/messages?after=${encodeURIComponent(args.after ?? '0')}&limit=${encodeURIComponent(args.limit ?? '10')}`));
     else if (command === 'status') {
       if ((args.task && args.run) || (args.all && (args.task || args.run || args.project))) throw new Error('Choose --task or --run; --all cannot be combined with a selection.');
+      if (args['include-archived'] && (args.task || args.run || args.project)) throw new Error('--include-archived is for the Project index. Selected IDs already include archived history.');
       if (args.task) print(await call(`/tasks/${await entity('task', args.task)}`));
       else if (args.run) print(await call(`/runs/${await entity('run', args.run)}`));
       else {
-        const project = args.all ? undefined : await currentProject(true);
-        if (project) await boardDisplay(project); else print(await call('/status'));
+        const project = args.all || args['include-archived'] ? undefined : await currentProject(true);
+        if (project) await boardDisplay(project); else print(await call(args['include-archived'] ? '/status?includeArchived=true' : '/status'));
       }
     } else if (command === 'run') {
       const guided = interactive && (!args.task || !args.provider || !args.model);
       if (!args.task && interactive) {
-        const project = await chooseProject();
+        const project = await chooseProject(true);
         const { tasks } = await call('/status');
         const choices = tasks.filter(t => t.project_id === project);
         if (!choices.length) throw new Error('No Tasks in this Project. Run threshold task create first.');

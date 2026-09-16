@@ -189,6 +189,49 @@ No command silently selects the most recent Task for you. Full IDs still work.
 `status --all` lists the global Project/Task index. `status --task ID` gives the actual checkpoint;
 `status --run ID` gives execution information. Board previews are intentionally shorter.
 
+### Put away a Project and return later (unreleased source)
+
+These commands are implemented in this checkout; the published `0.2.0-alpha.2` package does not
+include them yet. Use matching CLI and service versions when trying source changes.
+
+```sh
+threshold project archive PROJECT_ID
+threshold status --all --include-archived
+threshold project restore PROJECT_ID
+```
+
+Both commands accept a unique short ID, or `--project ID`. Archiving hides the Project and its Tasks
+from the default global index and selection menus. It keeps the repository, files, Task assessments,
+Runs, checkpoints, messages and decisions. No worker is stopped and no historical-start budget is reset.
+This is reversible organization, not deletion or a read-only lock on history.
+
+Archive refuses a Project with a starting/running Run or an unresolved `unknown` Run. Stop active work
+normally; for an old unknown Run, inspect it and use the existing workspace recovery procedure only
+after confirming the old worker is gone. Archive does not perform that recovery for you.
+
+An archived Project cannot create new Tasks or Runs. Restore it to continue work with the same IDs.
+Repeating archive/restore is harmless. Registering the same folder again returns the existing archived
+Project; it does not create a duplicate or silently restore it.
+
+`status --all` lists active Projects. `status --include-archived` (with or without `--all`) lists all
+Projects and their Tasks. Explicit `--project`, `--task`, `--run` queries and Message reads still reach
+archived history. Running `status`/`board` inside an archived repository also shows its history with a
+restore hint, rather than claiming the repository is unregistered.
+
+The service applies SQLite migration **v7** on startup: one nullable `projects.archived_at` field;
+existing Projects start active. Project JSON gains `archived_at` (null or a server timestamp).
+Local clients can POST `{}` to `/projects/ID/archive` or `/projects/ID/restore`, and GET
+`/status?includeArchived=true`. These are ordinary trusted-local client operations, not Human Decisions.
+Before upgrading a real home, stop its service and back up the closed data directory. Older services
+will refuse a v7 database; downgrading requires that pre-upgrade backup, not deleting history.
+
+### Git repositories without commits (unreleased source)
+
+A newly initialized repository is valid project state. Task detail shows **No commits yet** together
+with the actual branch and file changes. JSON uses `currentGit.head: null`; checkpoints can record that
+same observation. No initial commit is manufactured. Unreadable repositories and other Git failures
+remain explicit observation errors. A checkpoint's Git snapshot remains historical, not a fresh read.
+
 ## Messages and task assessment
 
 ```sh

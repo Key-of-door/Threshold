@@ -6,7 +6,7 @@ export function openStore(path) {
   const db = new DatabaseSync(path);
   db.exec('PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000; PRAGMA synchronous=FULL;');
   const version = db.prepare('PRAGMA user_version').get().user_version;
-  if (version > 6) { db.close(); throw new Error('Database is newer than this service'); }
+  if (version > 7) { db.close(); throw new Error('Database is newer than this service'); }
   if (version === 0) db.exec(`BEGIN IMMEDIATE;
     CREATE TABLE projects (id TEXT PRIMARY KEY, name TEXT NOT NULL, repo_path TEXT NOT NULL UNIQUE, created_at TEXT NOT NULL);
     CREATE TABLE tasks (id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id), title TEXT NOT NULL, instructions TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'in_progress');
@@ -35,6 +35,9 @@ export function openStore(path) {
   if (version < 6) db.exec(`BEGIN IMMEDIATE;
     ALTER TABLE runs ADD COLUMN workspace_recovery_json TEXT;
     PRAGMA user_version=6; COMMIT;`);
+  if (version < 7) db.exec(`BEGIN IMMEDIATE;
+    ALTER TABLE projects ADD COLUMN archived_at TEXT;
+    PRAGMA user_version=7; COMMIT;`);
   const readRun = row => row ? { ...row,
     capabilities: row.capabilities_json ? JSON.parse(row.capabilities_json) : null, capabilities_json: undefined,
     workspace_recovery: row.workspace_recovery_json ? JSON.parse(row.workspace_recovery_json) : null, workspace_recovery_json: undefined } : undefined;
@@ -44,14 +47,41 @@ export function openStore(path) {
     if (!task) throw Object.assign(new Error('Task not found'), { status: 404 });
     return { ...task, status_update: task.status_update_json ? JSON.parse(task.status_update_json) : null, status_update_json: undefined };
   };
+  const requiredProject = id => {
+    const project = db.prepare('SELECT * FROM projects WHERE id=?').get(id);
+    if (!project) throw Object.assign(new Error('Project not found'), { status: 404 });
+    return project;
+  };
+  const activeProject = id => {
+    const project = requiredProject(id);
+    if (project.archived_at) throw Object.assign(new Error(`Project is archived. Restore it with threshold project restore ${id} before creating Tasks or Runs.`), { status: 409 });
+    return project;
+  };
   return {
     db,
     createProject(name, repoPath) {
-      const project = { id: randomUUID(), name, repo_path: repoPath, created_at: now() };
-      db.prepare('INSERT INTO projects VALUES (?,?,?,?)').run(project.id, name, repoPath, project.created_at);
+      const existing = db.prepare('SELECT * FROM projects WHERE repo_path=?').get(repoPath);
+      if (existing) return existing;
+      const project = { id: randomUUID(), name, repo_path: repoPath, created_at: now(), archived_at: null };
+      db.prepare('INSERT INTO projects(id,name,repo_path,created_at) VALUES (?,?,?,?)').run(project.id, name, repoPath, project.created_at);
       return project;
     },
+    archiveProject(id) {
+      const project = requiredProject(id);
+      if (project.archived_at) return project;
+      const occupied = db.prepare(`SELECT r.id FROM runs r JOIN tasks t ON t.id=r.task_id WHERE t.project_id=?
+        AND (r.status IN ('starting','running') OR (r.status='unknown' AND r.workspace_recovery_json IS NULL)) LIMIT 1`).get(id);
+      if (occupied) throw Object.assign(new Error(`Project has an active or unresolved Run (${occupied.id}). Inspect it and stop active work or resolve its existing workspace occupancy before archiving. No worker was stopped.`), { status: 409 });
+      db.prepare('UPDATE projects SET archived_at=? WHERE id=?').run(now(), id);
+      return requiredProject(id);
+    },
+    restoreProject(id) {
+      requiredProject(id);
+      db.prepare('UPDATE projects SET archived_at=NULL WHERE id=?').run(id);
+      return requiredProject(id);
+    },
     createTask(projectId, title, instructions) {
+      activeProject(projectId);
       const task = { id: randomUUID(), project_id: projectId, title, instructions, status: 'in_progress' };
       db.prepare('INSERT INTO tasks(id,project_id,title,instructions,status) VALUES (?,?,?,?,?)').run(task.id, projectId, title, instructions, task.status);
       return requiredTask(task.id);
@@ -71,10 +101,11 @@ export function openStore(path) {
     },
     tasks: () => db.prepare('SELECT id FROM tasks').all().map(row => requiredTask(row.id)),
     // Compact index for the bare `status` CLI: no instructions, checkpoints or Run objectives.
-    statusIndex() {
+    statusIndex(includeArchived = false) {
       return {
-        projects: db.prepare('SELECT id, name, repo_path FROM projects ORDER BY created_at').all(),
-        tasks: db.prepare('SELECT id, project_id, title, status, status_update_json FROM tasks ORDER BY rowid').all()
+        projects: db.prepare('SELECT id, name, repo_path, archived_at FROM projects WHERE (? OR archived_at IS NULL) ORDER BY created_at').all(Number(includeArchived)),
+        tasks: db.prepare(`SELECT t.id,t.project_id,t.title,t.status,t.status_update_json FROM tasks t JOIN projects p ON p.id=t.project_id
+          WHERE (? OR p.archived_at IS NULL) ORDER BY t.rowid`).all(Number(includeArchived))
           .map(row => ({ id: row.id, project_id: row.project_id, title: row.title, status: row.status,
             status_update: row.status_update_json ? JSON.parse(row.status_update_json) : null })),
       };
@@ -115,6 +146,7 @@ export function openStore(path) {
     },
     startRun(taskId, provider, model, objective = null, capabilities = { skills: [], extensions: [] }, workspacePath, startedBy = null) {
       const task = requiredTask(taskId);
+      activeProject(task.project_id);
       const id = randomUUID();
       db.prepare("INSERT INTO runs(id,task_id,provider,model,status,started_at,objective,capabilities_json,workspace_path,started_by_run_id) VALUES (?,?,?,?,'starting',?,?,?,?,?)").run(id, taskId, provider, model, now(), objective, JSON.stringify(capabilities), workspacePath ?? this.project(task.project_id).repo_path, startedBy);
       return this.run(id);

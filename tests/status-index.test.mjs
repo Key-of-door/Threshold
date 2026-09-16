@@ -22,7 +22,8 @@ test('store statusIndex is a compact project/task index without full Task detail
     assert.equal(index.projects[0].id, project.id);
     assert.equal(index.projects[0].name, 'Index project');
     assert.equal(index.projects[0].repo_path, '/repo/index');
-    assert.deepEqual(Object.keys(index.projects[0]).sort(), ['id', 'name', 'repo_path']);
+    assert.deepEqual(Object.keys(index.projects[0]).sort(), ['archived_at', 'id', 'name', 'repo_path']);
+    assert.equal(index.projects[0].archived_at, null);
     assert.equal(index.tasks.length, 1);
     const entry = index.tasks[0];
     assert.deepEqual(Object.keys(entry).sort(), ['id', 'project_id', 'status', 'status_update', 'title']);
@@ -55,7 +56,7 @@ test('GET /status returns a compact index while GET /tasks/:id keeps full detail
     await call(`/tasks/${task.id}/status`, { status: 'done', note: 'Index summary' });
 
     const index = await call('/status');
-    assert.deepEqual(index.projects, [{ id: project.id, name: 'Index', repo_path: project.repo_path }]);
+    assert.deepEqual(index.projects, [{ id: project.id, name: 'Index', repo_path: project.repo_path, archived_at: null }]);
     assert.equal(index.tasks.length, 1);
     assert.deepEqual(Object.keys(index.tasks[0]).sort(), ['id', 'project_id', 'status', 'status_update', 'title']);
     assert.equal(index.tasks[0].status_update.note, 'Index summary');

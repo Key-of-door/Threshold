@@ -181,6 +181,10 @@ After an unclean restart, an `unknown` Run still holds its slot/worktree. Once y
 the old worker is gone and the workspace is reusable, use [explicit workspace recovery](docs/user-guide.md#recover-an-unknown-runs-workspace).
 The old Run outcome remains unknown.
 
+In the current **unreleased source**, Projects can also be archived and restored without deleting
+files or history. See [put away a Project and return later](docs/user-guide.md#put-away-a-project-and-return-later-unreleased-source).
+This is not yet included in the npm `0.2.0-alpha.2` package.
+
 ## Upgrade
 
 When ready to end the current workers, stop the service normally, update the package, and restart:
@@ -192,8 +196,10 @@ threshold --version
 threshold service start
 ```
 
-Use your existing `--home` and `--agent-dir` overrides if applicable. Project history is retained;
-this release adds no database migration. A running service does not update just because npm installed
+Use your existing `--home` and `--agent-dir` overrides if applicable. Project history is retained.
+The published `0.2.0-alpha.2` release adds no database migration. Current unreleased source adds schema
+v7 for Project archives; back up the closed home before using it, since older services refuse that schema.
+A running service does not update just because npm installed
 a newer CLI. See [troubleshooting](docs/user-guide.md#technical-errors-and-stopping) before deleting
 any runtime marker or retrying a failed startup.
 
