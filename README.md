@@ -35,20 +35,32 @@ You need **Node 24.18+**, npm, Git, and a working Pi provider/model configuratio
 Windows workers need Git for Windows Bash. Linux/macOS use is not yet fully validated.
 Pi is pinned to **0.85.1** and installed as a dependency.
 
-From a source checkout, create and install the local package:
+Install the current alpha from [npm](https://www.npmjs.com/package/threshold-lite):
+
+```sh
+npm install -g threshold-lite@alpha
+threshold --version
+threshold --help
+```
+
+The published release is **0.2.0-alpha.1**. To pin it, use `threshold-lite@0.2.0-alpha.1` instead of `threshold-lite@alpha`.
+For a user-writable installation directory, use `npm install -g --prefix PATH threshold-lite@alpha`
+and put `PATH` (Windows) or `PATH/bin` (Linux/macOS) on your shell's PATH.
+
+<details>
+<summary>Install from source or a local tarball</summary>
+
+From a source checkout:
 
 ```sh
 npm ci
 npm pack
 npm install -g ./threshold-lite-0.2.0-alpha.1.tgz
-threshold --help
-threshold --version
 ```
 
-If you were given the `.tgz` preview package, start at `npm install -g PATH_TO_PACKAGE.tgz`.
-This version is a local preview, not a claim that it is published on npm.
-For a user-writable installation directory, use `npm install -g --prefix PATH PATH_TO_PACKAGE.tgz`
-and put `PATH` (Windows) or `PATH/bin` (Linux/macOS) on your shell's PATH.
+If you already have a `.tgz` package, use `npm install -g PATH_TO_PACKAGE.tgz`.
+
+</details>
 
 ## Start a service
 
