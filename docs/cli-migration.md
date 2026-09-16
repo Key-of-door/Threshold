@@ -9,7 +9,13 @@
   or `service stop` for the service. This deliberate change prevents omission of a flag from stopping everything.
 - Unique ID prefixes are accepted. `--project` scopes Task/Run lookup; ambiguity is an error.
 - Help/version work without the service. Project registration can infer the Git root; Task creation can
-  infer its Project. No DB schema migration, new ontology or automatic capability activation was added.
+  infer its Project. That CLI-defaults change did not migrate the DB or add automatic capability activation.
 
 This preview changes CLI defaults; it does not change existing Human Decision, Task/Message or execution
 semantics. Existing experiment reports retain their historical commands and identities.
+
+The subsequent release-preparation increment adds explicit `run recover` for unknown Runs after a
+restart. Schema v6 adds a nullable `workspace_recovery` marker to Run responses and stores it in SQLite;
+the old `unknown` status and exit observations are unchanged. Full Run IDs, `--confirm-reusable` and a
+note are required. See [workspace recovery](user-guide.md#recover-an-unknown-runs-workspace). Back up the
+closed service data directory before upgrading; older service versions cannot open a v6 database.

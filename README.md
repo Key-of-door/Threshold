@@ -110,6 +110,10 @@ To interrupt **one worker**: `threshold run stop RUN_ID`.
 To stop the **service and its workers**: `threshold service stop`.
 Bare `threshold stop` takes no action and explains the choice. Project data is retained.
 
+After an unclean restart, an `unknown` Run still holds its slot/worktree. Once you independently confirm
+the old worker is gone and the workspace is reusable, use [explicit workspace recovery](docs/user-guide.md#recover-an-unknown-runs-workspace).
+The old Run outcome remains unknown.
+
 ## More, when needed
 
 - `threshold COMMAND --help` explains flags and gives an example.
@@ -125,3 +129,7 @@ Bare `threshold stop` takes no action and explains the choice. Project data is r
 Normal development does not need a deployment approval. Current Risk STOP demonstrates only local `fake_deploy`;
 it is not a universal shell/network safety layer or a real remote-operation guarantee.
 The service listens only on loopback and is for a trusted local OS user. Do not expose it as a multi-user/network server.
+
+## License
+
+Licensed under [Apache-2.0](LICENSE).

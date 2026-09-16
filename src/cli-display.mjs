@@ -19,6 +19,7 @@ const commands = {
   run: ['--task ID --provider NAME --model NAME [--attach] [--objective TEXT] [--workspace PATH] [--skill PATH] [--extension PATH] [--project ID]', 'Start a fresh Pi session. Default: background work, return immediately, exit after Pi settles. --attach: start an interactive worker that waits for further input until run stop. Detaching never changes this startup policy. Repeat skill/extension flags for this Run only; next Run inherits none. Provider credentials come from Pi config/service environment.', 'threshold run --task a1b2 --provider deepseek --model deepseek-flash --attach'],
   'run attach': ['ID | --run ID', 'Observe and talk to an existing live Run. Enter sends input; /detach or Ctrl+C leaves the view without stopping the worker. Working input is queued at a Pi tool boundary; idle input starts another round. Does not extend a background Run lifetime. Non-TTY and --json return one public-activity snapshot without consuming stdin. Activity is bounded, in memory only, and unavailable after service restart.', 'threshold run attach c3d4'],
   'run stop': ['ID | --run ID', 'Interrupt one Run. Its exit does not establish descendant or external-effect state. Does not stop the service.', 'threshold run stop c3d4'],
+  'run recover': ['FULL_RUN_ID --confirm-reusable --note TEXT', 'Release an unknown Run\'s stale slot/worktree only after you independently checked that the old worker is gone and the workspace is reusable. Requires a full Run ID (or --run FULL_RUN_ID). Records a client confirmation; does not stop a process, restore a conversation, establish external effects or change the unknown outcome. Repeating keeps the original recovery note/time.', 'threshold run recover FULL_RUN_ID --confirm-reusable --note "Checked old worker is gone and workspace is reusable"'],
   status: ['[--task ID | --run ID | --project ID] [--all]', 'Show the current Project when recognized, otherwise the Project index. Select Task for its full checkpoint, Run for execution detail. --all shows the global index.', 'threshold status --task a1b2'],
   'message read': ['--task ID [--after 0] [--limit 10] [--project ID]', 'Read persistent Task messages without consuming them. Follow nextAfter when hasMore is true.', 'threshold message read --task a1b2'],
   'message send': ['--task ID (--body TEXT | --body-file PATH) [--project ID]', 'Append a collaboration message. A message is not a Human Decision.', 'threshold message send --task a1b2 --body "Please review the actual diff"'],
@@ -29,7 +30,7 @@ const groups = [
   ['Start here', [['serve', 'Start the local service'], ['project create', 'Connect this Git repository'], ['task create', 'Give the project a task'], ['run', 'Start a fresh worker'], ['status', 'See where the work stands']]],
   ['Work together', [['run attach ID', 'See and talk to a live worker'], ['task update', 'Record a work assessment'], ['message read / send', 'Exchange project notes'], ['board', 'See tasks and runs together']]],
   ['Stop something', [['run stop ID', 'One worker'], ['service stop', 'Service and managed workers']]],
-  ['When needed', [['decision', 'Human decision for fake_deploy'], ['--json', 'Machine-readable output'], ['--home PATH', 'Choose another data directory'], ['--version', 'Show the installed version']]],
+  ['When needed', [['run recover ID', 'Release manually checked stale occupancy'], ['decision', 'Human decision for fake_deploy'], ['--json', 'Machine-readable output'], ['--home PATH', 'Choose another data directory'], ['--version', 'Show the installed version']]],
 ];
 
 export function help(command = '', options = {}) {
@@ -57,6 +58,7 @@ export function display(value, options = {}) {
     ...(options.interactions?.[run.id] ? ['  '+t('accent', options.interactions[run.id])+' '+t('dim', '/ live snapshot')] : []),
     ...(compact && run.objective ? ['  '+t('', excerpt(run.objective, 2))] : []),
     ...(run.error ? ['  '+t('error', run.error)] : []),
+    ...(run.workspace_recovery ? ['  '+t('dim', 'Workspace manually confirmed reusable; old outcome unknown.')] : []),
     ...(run.workspace_path ? ['  '+t('dim', run.workspace_path)] : [])];
   const messageRows = message => [f.title(`#${message.id}`, `${message.source}${message.from_run_id ? ' / run '+id(message.from_run_id) : ''}${message.created_at ? ' / '+message.created_at : ''}`), t('', message.body), ''];
 
@@ -98,6 +100,9 @@ export function display(value, options = {}) {
   if (value.provider && value.task_id) {
     const rows = [f.title(value.objective ?? 'Run', id(value.id)), f.state(value), f.pair('Task', id(value.task_id)),
       ...(value.error ? [section('What happened'), t('error', value.error), t('dim', 'Inspect the checkpoint and current files before continuing.')] : []),
+      ...(value.workspace_recovery ? [section('Workspace recovery'), t('', 'Client manually confirmed workspace reusable; stale occupancy released.'),
+        t('dim', 'Old outcome remains unknown. External effects are not established.'),
+        f.pair('Confirmed', value.workspace_recovery.confirmedAt), t('', value.workspace_recovery.note)] : []),
       section('Runtime'), f.pair('Model', `${value.provider} / ${value.model}`), f.pair('Workspace', value.workspace_path ?? 'Not recorded', 'dim'),
       f.pair('Started', value.started_at), f.pair('Ended', value.ended_at ?? 'Not recorded'),
       f.pair('Exit code', value.exit_code ?? 'Not observed'), f.pair('Session', value.session_id ?? 'Not recorded', 'dim'),
@@ -119,7 +124,8 @@ export function display(value, options = {}) {
     }
     rows.push(t('dim', 'Selection does not establish extension loading or execution.'), '', f.pair('Full Run ID', value.id, 'dim'),
       t('dim', 'This is a snapshot.'), f.command(`threshold status --run ${id(value.id)}`), f.command(`threshold status --task ${id(value.task_id)}`));
-    if (['starting', 'running', 'unknown'].includes(value.status)) rows.push(f.command(`threshold run stop ${id(value.id)}`));
+    if (['starting', 'running'].includes(value.status)) rows.push(f.command(`threshold run stop ${id(value.id)}`));
+    if (value.status === 'unknown' && !value.workspace_recovery) rows.push(t('dim', 'Still holds a slot/worktree. Independently check the old worker and workspace before recovery.'), f.command('threshold run recover --help'));
     return rows.join('\n');
   }
   if (value.repo_path) return [f.title(value.name, 'project '+id(value.id)), t('dim', value.repo_path), '',
