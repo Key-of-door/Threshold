@@ -32,8 +32,19 @@ Capability selection is shown separately from observed tool use. [Start here](#i
 ## Install
 
 You need **Node 24.18+**, npm, Git, and a provider account/API key (or an existing Pi login).
-Windows workers need Git for Windows Bash. Linux/macOS use is not yet fully validated.
+Windows workers need Git for Windows Bash; WSL2 workers use Linux Bash.
 Pi is pinned to **0.85.1** and installed as a dependency.
+
+| Environment | Validation status for 0.2.0-alpha.3 |
+| --- | --- |
+| Windows x64 + Git for Windows Bash | Tested: installation, CLI, service and Pi workflows |
+| Ubuntu 24.04 x64 on WSL2 | Tested: fresh npm installation, native Linux Node/Bash, interactive attach/detach, restart handoff and Project archive/restore |
+| Native Linux, other WSL distributions, macOS | Not yet tested |
+
+The WSL2 check used real Pi processes and a local deterministic model fixture; it did not
+verify a live external model provider.
+In WSL, install Node and Threshold **inside Linux**, and use Linux paths for your project,
+data and Pi configuration. [WSL setup notes](docs/user-guide.md#wsl2).
 
 Install the current alpha from [npm](https://www.npmjs.com/package/threshold-lite):
 

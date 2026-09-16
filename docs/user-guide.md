@@ -2,6 +2,43 @@
 
 Use `threshold --help` for the command list and `threshold run --help` for a specific command.
 
+## WSL2
+
+Ubuntu 24.04 x64 on WSL2 was tested with Node 24.18.0, Threshold 0.2.0-alpha.3 and Pi 0.85.1.
+Install Linux Node 24.18+ and Git first, then run the following **inside your WSL terminal**:
+
+```sh
+node --version
+git --version
+npm install -g --prefix "$HOME/.local" threshold-lite@alpha
+export PATH="$HOME/.local/bin:$PATH"
+threshold --version
+threshold setup
+threshold service start
+```
+
+Finish each interactive command before entering the next. Keep the PATH addition in your
+shell profile if it is not already there. Use `command -v node` and `command -v threshold`
+to check that you are using Linux executables, not a Windows installation under `/mnt/c`.
+
+Choose an existing Linux folder when creating a Project, for example `/home/me/my-project`.
+For WSL development, Microsoft [recommends keeping project files in the Linux filesystem](https://learn.microsoft.com/en-us/windows/wsl/filesystems#file-storage-and-performance-across-file-systems).
+This validation used Linux storage, including a path with spaces and Chinese characters;
+shared Windows-mounted workspaces were not tested.
+
+WSL has its own Pi config (`~/.pi/agent`) and Threshold data (`~/.local/state/threshold`, or
+`$XDG_STATE_HOME/threshold`). Windows credentials/configuration are not automatically configured
+there. Use `threshold setup` inside WSL; do not reuse a Windows `shellPath` ending in `bash.exe`.
+Keep each service home within one OS environment rather than sharing a live SQLite home between
+Windows and Linux. `service start` returns to the same terminal; `service stop` stops managed workers.
+Shutting down WSL ends its processes; persisted project state survives, but an interactive
+conversation does not. The normal unknown-Run recovery rules still apply after an unclean exit.
+
+The WSL smoke used a local model fixture with real Pi, Bash and collaboration tool execution.
+External provider connectivity/authentication, native Linux, other distributions and macOS
+remain separate validation work. Windows localhost proxies may also need separate WSL setup;
+an installation succeeding does not prove that your provider endpoint is reachable.
+
 ## Provider setup
 
 ### Guided setup
@@ -71,7 +108,8 @@ Pipes and `--json` never prompt. Their existing required Task/provider/model fla
 Run startup policy remain unchanged: `run` is background; `run --attach` is interactive.
 Existing data response shapes are retained. `/models` is a new read-only configuration
 listing without credentials; the local `server.json` locator now also records `agentDir`.
-No database migration is needed.
+The alpha.2 onboarding changes needed no database migration. Alpha.3 adds the v7
+Project archive migration described below.
 
 For ordinary configured models, missing local credentials/model IDs are reported before
 inserting a Run. Credential presence is not online authentication or connectivity proof.
@@ -269,9 +307,11 @@ a repository's instruction file has automatically been loaded.
 ## Upgrading
 
 Finish the current work or intentionally stop it with `threshold service stop` (this stops managed
-workers), then run `npm install -g threshold-lite@alpha`, check `threshold --version`, and use
-`threshold service start`. Keep the same `--home` and, if used, `--agent-dir`. Installing a new CLI
-does not upgrade an already running service. This release adds no DB migration and preserves history.
+workers), then back up the closed service home. Run `npm install -g threshold-lite@alpha`, check
+`threshold --version`, and use `threshold service start`. Keep the same `--home` and, if used,
+`--agent-dir`. Installing a new CLI does not upgrade an already running service. Alpha.3 applies
+schema v7 on startup and preserves existing history; older services refuse a v7 database.
+Use the pre-upgrade backup if you need to downgrade.
 
 If you temporarily defined a PowerShell `function threshold` to run a source checkout, it still takes
 precedence over the installed npm command. Open a fresh terminal, or remove only that function with
