@@ -1,5 +1,22 @@
 # From the 0.1 prototype to 0.2 alpha
 
+## 0.2.0-alpha.3: Project archives and empty repositories
+
+- `project archive ID` hides a Project and its Tasks from the normal index and selection menus.
+  It retains IDs, files and history. `project restore ID` allows new work again.
+- `status --all --include-archived` includes archived Projects and Tasks. Direct ID queries and
+  current-repository inspection still show archived history with a restore hint.
+- Active or unresolved Runs prevent archive; archive never stops workers or confirms an unknown exit.
+  Archived Projects cannot create new Tasks or Runs. Re-registering the same folder does not restore it.
+- Schema **v7** adds nullable `projects.archived_at`. Existing Projects start active; Project JSON
+  gains the same null-or-timestamp field. No existing records are removed and budgets are unchanged.
+- Git observations before the first commit retain the actual branch and file status with `head: null`.
+  Human Task detail shows `No commits yet`. Other Git errors remain errors.
+
+Stop the old service, back up its closed home directory, upgrade the package, then start the new service
+with the same home/configuration. Older versions refuse schema v7; restore the pre-upgrade backup before
+downgrading. Archiving is reversible organization, not permanent deletion or a read-only history lock.
+
 ## 0.2.0-alpha.2: guided onboarding
 
 - `setup` is an interactive wrapper around Pi model/default/credential configuration.

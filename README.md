@@ -43,7 +43,7 @@ threshold --version
 threshold --help
 ```
 
-This release is **0.2.0-alpha.2**. To pin it, use `threshold-lite@0.2.0-alpha.2` instead of `threshold-lite@alpha`.
+This release is **0.2.0-alpha.3**. To pin it, use `threshold-lite@0.2.0-alpha.3` instead of `threshold-lite@alpha`.
 For a user-writable installation directory, use `npm install -g --prefix PATH threshold-lite@alpha`
 and put `PATH` (Windows) or `PATH/bin` (Linux/macOS) on your shell's PATH.
 
@@ -55,7 +55,7 @@ From a source checkout:
 ```sh
 npm ci
 npm pack
-npm install -g ./threshold-lite-0.2.0-alpha.2.tgz
+npm install -g ./threshold-lite-0.2.0-alpha.3.tgz
 ```
 
 If you already have a `.tgz` package, use `npm install -g PATH_TO_PACKAGE.tgz`.
@@ -181,26 +181,27 @@ After an unclean restart, an `unknown` Run still holds its slot/worktree. Once y
 the old worker is gone and the workspace is reusable, use [explicit workspace recovery](docs/user-guide.md#recover-an-unknown-runs-workspace).
 The old Run outcome remains unknown.
 
-In the current **unreleased source**, Projects can also be archived and restored without deleting
-files or history. See [put away a Project and return later](docs/user-guide.md#put-away-a-project-and-return-later-unreleased-source).
-This is not yet included in the npm `0.2.0-alpha.2` package.
+Projects can also be archived and restored without deleting files or history. See
+[put away a Project and return later](docs/user-guide.md#put-away-a-project-and-return-later).
 
 ## Upgrade
 
-When ready to end the current workers, stop the service normally, update the package, and restart:
+When ready to end the current workers, stop the service normally, back up the closed home directory,
+then update the package and restart:
 
 ```sh
 threshold service stop
+# Back up the closed service home before the schema v7 upgrade.
 npm install -g threshold-lite@alpha
 threshold --version
 threshold service start
 ```
 
 Use your existing `--home` and `--agent-dir` overrides if applicable. Project history is retained.
-The published `0.2.0-alpha.2` release adds no database migration. Current unreleased source adds schema
-v7 for Project archives; back up the closed home before using it, since older services refuse that schema.
-A running service does not update just because npm installed
-a newer CLI. See [troubleshooting](docs/user-guide.md#technical-errors-and-stopping) before deleting
+Version `0.2.0-alpha.3` adds schema **v7** for Project archives. Existing Projects remain active.
+Older services refuse a v7 database; downgrading requires the pre-upgrade backup.
+A running service does not update just because npm installed a newer CLI.
+See [troubleshooting](docs/user-guide.md#technical-errors-and-stopping) before deleting
 any runtime marker or retrying a failed startup.
 
 ## More, when needed

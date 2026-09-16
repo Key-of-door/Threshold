@@ -189,10 +189,10 @@ No command silently selects the most recent Task for you. Full IDs still work.
 `status --all` lists the global Project/Task index. `status --task ID` gives the actual checkpoint;
 `status --run ID` gives execution information. Board previews are intentionally shorter.
 
-### Put away a Project and return later (unreleased source)
+### Put away a Project and return later
 
-These commands are implemented in this checkout; the published `0.2.0-alpha.2` package does not
-include them yet. Use matching CLI and service versions when trying source changes.
+Available in **0.2.0-alpha.3**. Use matching CLI and service versions; upgrading the package does not
+replace an already running service. Back up the closed service home before starting the upgraded service.
 
 ```sh
 threshold project archive PROJECT_ID
@@ -225,9 +225,9 @@ Local clients can POST `{}` to `/projects/ID/archive` or `/projects/ID/restore`,
 Before upgrading a real home, stop its service and back up the closed data directory. Older services
 will refuse a v7 database; downgrading requires that pre-upgrade backup, not deleting history.
 
-### Git repositories without commits (unreleased source)
+### Git repositories without commits
 
-A newly initialized repository is valid project state. Task detail shows **No commits yet** together
+Since **0.2.0-alpha.3**, a newly initialized repository is valid observed project state. Task detail shows **No commits yet** together
 with the actual branch and file changes. JSON uses `currentGit.head: null`; checkpoints can record that
 same observation. No initial commit is manufactured. Unreadable repositories and other Git failures
 remain explicit observation errors. A checkpoint's Git snapshot remains historical, not a fresh read.
