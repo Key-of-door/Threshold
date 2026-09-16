@@ -156,13 +156,39 @@ a repository's instruction file has automatically been loaded.
   not know whether the underlying cause was authentication, network, provider or runtime. It does not store raw provider errors.
 - Port in use: stop the intended old service, or choose another port with `serve --port NUMBER` (`0` chooses a free port).
 - Run limit: inspect Board. `--max-runs` counts all historical starts in this home, including failed starts;
-  `--max-parallel-runs` includes unknown exits. Configure deliberately; don't delete history to replenish quota.
-- Stale lock / unknown exit: inspect the recorded process and workspace before intervention. There is currently
-  no automatic recovery command. Do not assume deleting a lock proves workers or external effects stopped.
+  `--max-parallel-runs` includes unknown exits until explicit workspace recovery. Configure deliberately; don't delete history to replenish quota.
+- Stale lock / unknown exit: inspect the recorded process and workspace before intervention. Remove a stale
+  service lock only after checking the old service and workers are gone. Removing it does not recover a Run
+  or establish external effects. After restarting, use the explicit recovery path below for stale occupancy.
 
 `run stop ID` interrupts one worker. `service stop` requests shutdown of this service and all managed workers.
 An exit observation is not proof of arbitrary child-process cleanup or absent external effects.
 Interrupted/failed Runs keep their error; a successful stop request doesn't turn the Task into done.
+
+### Recover an unknown Run's workspace
+
+After a service restart, previously starting/running Runs become `unknown`. They still occupy their
+worktree and a parallel slot because the new service cannot establish the old worker's exit. `run stop`
+cannot stop an unowned process. First independently check that the old worker is gone and inspect the
+workspace and any relevant external effects. Only when you have confirmed the workspace is reusable:
+
+```sh
+threshold status --run ID
+threshold run recover FULL_RUN_ID --confirm-reusable --note "Checked old worker is gone and workspace is reusable"
+```
+
+Copy the full Run ID from Run detail; recovery deliberately rejects prefixes. Both the confirmation
+flag and a nonempty note are required. This records `workspace_recovery` with `source: client`, a server
+timestamp and your note, and releases only that old Run's occupancy. Its `status` remains `unknown`;
+session ID, error, exit code and end time are unchanged. It does not establish absent external effects,
+restore the old conversation, change Task status or replenish the historical-start budget. Repeating the
+command returns the first recovery record unchanged, even if a new worker now occupies the worktree.
+Start a fresh Run normally after recovery. Active/ended Runs cannot use this path.
+
+This is a trusted local client confirmation, not authenticated Human identity or an automatic process
+check. It is not exposed as an Agent tool. Clients can POST `/runs/FULL_RUN_ID/recover` with
+`{"confirmReusable":true,"note":"..."}`. SQLite schema v6 adds a nullable recovery marker to existing
+Run rows on service startup; it does not infer confirmations for historical Runs.
 
 For a simple backup, stop the service normally and copy its data directory while it is closed. Keep your
 Git repository/backups separately. Live SQLite backup, automatic crash recovery and moving registered

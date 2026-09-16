@@ -9,6 +9,26 @@ You do not need to copy the previous conversation.
 Early alpha: one machine, trusted local user. Pi runs the Agent; Git holds the code; SQLite holds project state.
 Optional capabilities are not required for the first workflow.
 
+## See it in action
+
+**The coordinator leaves. The work continues.** Two peer workers use separate Git worktrees;
+a fresh coordinating Run reads Project state and Git, then reviews and integrates their work.
+
+![Peer workers continue after their coordinator ends, and a fresh Run picks up the project](docs/media/peer-collaboration.gif)
+
+<details>
+<summary>Different Runs. Different capabilities. Same Project.</summary>
+
+Select a reviewer, compose GitHub read with it, then start a Run with no optional capabilities.
+Messages carry findings between independent workers; the next worker checks them against the actual code.
+
+![Run-local capability selection, a shared review finding, and independent verification by a fresh worker](docs/media/run-capabilities.gif)
+
+</details>
+
+These are edited recordings of the real CLI from September 2026; pauses are cut and captions are editorial.
+Capability selection is shown separately from observed tool use. [Start here](#install) to try it yourself.
+
 ## Install
 
 You need **Node 24.18+**, npm, Git, and a working Pi provider/model configuration.
@@ -110,6 +130,10 @@ To interrupt **one worker**: `threshold run stop RUN_ID`.
 To stop the **service and its workers**: `threshold service stop`.
 Bare `threshold stop` takes no action and explains the choice. Project data is retained.
 
+After an unclean restart, an `unknown` Run still holds its slot/worktree. Once you independently confirm
+the old worker is gone and the workspace is reusable, use [explicit workspace recovery](docs/user-guide.md#recover-an-unknown-runs-workspace).
+The old Run outcome remains unknown.
+
 ## More, when needed
 
 - `threshold COMMAND --help` explains flags and gives an example.
@@ -125,3 +149,7 @@ Bare `threshold stop` takes no action and explains the choice. Project data is r
 Normal development does not need a deployment approval. Current Risk STOP demonstrates only local `fake_deploy`;
 it is not a universal shell/network safety layer or a real remote-operation guarantee.
 The service listens only on loopback and is for a trusted local OS user. Do not expose it as a multi-user/network server.
+
+## License
+
+Licensed under [Apache-2.0](LICENSE).

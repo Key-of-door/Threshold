@@ -16,10 +16,10 @@ async function main() {
     ({ values: args, positionals: commands } = parseArgs({ allowPositionals: true, options: {
       ...Object.fromEntries(['home', 'agent-dir', 'port', 'name', 'repo', 'project', 'title', 'instructions', 'instructions-file', 'task', 'provider', 'model', 'run', 'target', 'value', 'objective', 'status', 'note', 'body', 'body-file', 'after', 'limit', 'workspace', 'max-parallel-runs', 'max-runs'].map(key => [key, { type: 'string' }])),
       skill: { type: 'string', multiple: true }, extension: { type: 'string', multiple: true },
-      ...Object.fromEntries(['summary', 'json', 'all', 'help', 'version', 'ascii', 'no-color', 'attach'].map(key => [key, { type: 'boolean' }])) } }));
+      ...Object.fromEntries(['summary', 'json', 'all', 'help', 'version', 'ascii', 'no-color', 'attach', 'confirm-reusable'].map(key => [key, { type: 'boolean' }])) } }));
   } catch (error) { report(`${error.message}\nRun threshold --help.`); return 1; }
   if (args.version) { console.log(`threshold ${JSON.parse(readFileSync(new URL('../package.json', import.meta.url))).version}`); return 0; }
-  const runPosition = commands[0] === 'run' && ['stop', 'attach'].includes(commands[1]) && commands.length === 3 ? commands.pop() : undefined;
+  const runPosition = commands[0] === 'run' && ['stop', 'attach', 'recover'].includes(commands[1]) && commands.length === 3 ? commands.pop() : undefined;
   const command = commands.join(' ');
   const presentation = { ...terminalOptions(process.stdout, args), version: JSON.parse(readFileSync(new URL('../package.json', import.meta.url))).version, home: args.home && resolve(args.home) };
   if (!command || args.help) { console.log(help(command, presentation)); return command && !commandNames.includes(command) && !['project', 'task', 'message', 'service'].includes(command) ? 1 : 0; }
@@ -152,6 +152,12 @@ async function main() {
     } else if (command === 'run stop') {
       if (runPosition && args.run) throw new Error('Specify the Run once: run stop ID or run stop --run ID.');
       print(await call(`/runs/${await entity('run', runPosition ?? required('run'))}/stop`, {}));
+    } else if (command === 'run recover') {
+      if (runPosition && args.run) throw new Error('Specify the Run once: run recover ID or run recover --run ID.');
+      const selected = runPosition ?? required('run');
+      if (!fullId.test(selected)) throw new Error('Recovery requires the full Run ID. Inspect threshold status --run ID first.');
+      if (!args['confirm-reusable']) throw new Error('No recovery requested. Independently check that the old worker is gone and the workspace is reusable, then use --confirm-reusable --note TEXT. The old outcome and external effects remain unknown.');
+      print(await call(`/runs/${await entity('run', selected)}/recover`, { confirmReusable: true, note: required('note') }));
     } else if (command === 'service stop') {
       if (args.run || args.task) throw new Error('service stop stops the whole service. To stop one worker: threshold run stop ID.');
       print(await call('/shutdown', {}));

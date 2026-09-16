@@ -288,7 +288,7 @@ export async function startService({ home, agentDir, port = 8765, workerFactory 
           return reply(202, launch(taskRoute[1], text(data.provider, 'provider', 100), text(data.model, 'model', 200),
             data.objective === undefined ? null : text(data.objective, 'objective', 6000), data.skills, data.extensions, data.workspacePath, run?.id, data.interactive));
         }
-        const runRoute = path.match(/^\/runs\/([^/]+)(\/(?:stop|live|input))?$/);
+        const runRoute = path.match(/^\/runs\/([^/]+)(\/(?:stop|live|input|recover))?$/);
         if (runRoute) {
           const run = store.run(runRoute[1]), job = jobs.get(runRoute[1]);
           if (!run) throw problem(404, 'Run not found');
@@ -318,6 +318,12 @@ export async function startService({ home, agentDir, port = 8765, workerFactory 
               job.live.add('error', { text: 'Input delivery is unconfirmed. Inspect live activity before resending.' });
               throw problem(502, 'Input delivery is unconfirmed; inspect live activity before resending.');
             } finally { job.inputPending = false; }
+          }
+          if (method === 'POST' && runRoute[2] === '/recover') {
+            const data = await body(req);
+            if (data.confirmReusable !== true) throw problem(400, 'Confirm that you independently checked the old worker is gone and the workspace is reusable; the Run outcome and external effects remain unknown');
+            if (job?.active) throw problem(409, 'The service still owns this worker; use run stop');
+            return reply(200, store.recoverWorkspace(run.id, text(data.note, 'recovery note', 3000)));
           }
           if (method === 'POST' && runRoute[2] === '/stop') {
             if (job?.active) { job.cancelled = true; job.ready = false; job.endRequested(); await job.worker?.stop(); await job.done; }

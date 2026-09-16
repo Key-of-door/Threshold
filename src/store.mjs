@@ -6,7 +6,7 @@ export function openStore(path) {
   const db = new DatabaseSync(path);
   db.exec('PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000; PRAGMA synchronous=FULL;');
   const version = db.prepare('PRAGMA user_version').get().user_version;
-  if (version > 5) { db.close(); throw new Error('Database is newer than this service'); }
+  if (version > 6) { db.close(); throw new Error('Database is newer than this service'); }
   if (version === 0) db.exec(`BEGIN IMMEDIATE;
     CREATE TABLE projects (id TEXT PRIMARY KEY, name TEXT NOT NULL, repo_path TEXT NOT NULL UNIQUE, created_at TEXT NOT NULL);
     CREATE TABLE tasks (id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id), title TEXT NOT NULL, instructions TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'in_progress');
@@ -32,7 +32,12 @@ export function openStore(path) {
     ALTER TABLE runs ADD COLUMN started_by_run_id TEXT REFERENCES runs(id);
     UPDATE runs SET workspace_path=(SELECT p.repo_path FROM tasks t JOIN projects p ON p.id=t.project_id WHERE t.id=runs.task_id);
     PRAGMA user_version=5; COMMIT;`);
-  const readRun = row => row ? { ...row, capabilities: row.capabilities_json ? JSON.parse(row.capabilities_json) : null, capabilities_json: undefined } : undefined;
+  if (version < 6) db.exec(`BEGIN IMMEDIATE;
+    ALTER TABLE runs ADD COLUMN workspace_recovery_json TEXT;
+    PRAGMA user_version=6; COMMIT;`);
+  const readRun = row => row ? { ...row,
+    capabilities: row.capabilities_json ? JSON.parse(row.capabilities_json) : null, capabilities_json: undefined,
+    workspace_recovery: row.workspace_recovery_json ? JSON.parse(row.workspace_recovery_json) : null, workspace_recovery_json: undefined } : undefined;
   db.prepare("UPDATE runs SET status='unknown', error='Service restarted without a process exit observation' WHERE status IN ('starting','running')").run();
   const requiredTask = id => {
     const task = db.prepare('SELECT * FROM tasks WHERE id=?').get(id);
@@ -115,7 +120,17 @@ export function openStore(path) {
       return this.run(id);
     },
     runCount: () => db.prepare('SELECT COUNT(*) AS n FROM runs').get().n,
-    unsettledRuns: () => db.prepare("SELECT * FROM runs WHERE status IN ('starting','running','unknown')").all().map(readRun),
+    unsettledRuns: () => db.prepare("SELECT * FROM runs WHERE status IN ('starting','running') OR (status='unknown' AND workspace_recovery_json IS NULL)").all().map(readRun),
+    recoverWorkspace(id, note) {
+      // Client confirmation releases occupancy only. The unobserved outcome stays unknown.
+      const recovery = { source: 'client', confirmedAt: now(), note };
+      db.prepare("UPDATE runs SET workspace_recovery_json=? WHERE id=? AND status='unknown' AND workspace_recovery_json IS NULL")
+        .run(JSON.stringify(recovery), id);
+      const run = this.run(id);
+      if (!run) throw Object.assign(new Error('Run not found'), { status: 404 });
+      if (run.status !== 'unknown') throw Object.assign(new Error('Only an unknown Run can have its workspace recovered; use run stop for an active worker'), { status: 409 });
+      return run;
+    },
     board(projectId) {
       const project = this.project(projectId);
       if (!project) throw Object.assign(new Error('Project not found'), { status: 404 });
@@ -124,9 +139,10 @@ export function openStore(path) {
         const { task, checkpoint, recentRuns, messageInbox } = this.context(id);
         const messages = db.prepare('SELECT id,from_run_id,body,created_at FROM messages WHERE task_id=? ORDER BY id DESC LIMIT 3').all(id);
         const briefRun = run => ({ id: run.id, status: run.status, objective: clip(run.objective), workspace_path: run.workspace_path,
-          started_at: run.started_at, ended_at: run.ended_at, error: run.error, started_by_run_id: run.started_by_run_id });
+          started_at: run.started_at, ended_at: run.ended_at, error: run.error, started_by_run_id: run.started_by_run_id,
+          workspace_recovery: run.workspace_recovery });
         return { id, title: task.title, status: task.status, status_update: task.status_update,
-          unsettledRuns: db.prepare("SELECT * FROM runs WHERE task_id=? AND status IN ('starting','running','unknown')").all(id).map(readRun).map(briefRun),
+          unsettledRuns: db.prepare("SELECT * FROM runs WHERE task_id=? AND (status IN ('starting','running') OR (status='unknown' AND workspace_recovery_json IS NULL))").all(id).map(readRun).map(briefRun),
           latestRun: recentRuns[0] ? briefRun(recentRuns[0]) : null,
           checkpoint: checkpoint ? { id: checkpoint.id, run_id: checkpoint.run_id, source: checkpoint.source, summary: clip(checkpoint.summary), created_at: checkpoint.created_at } : null,
           messageInbox, recentMessages: messages.map(message => ({ ...message, body: clip(message.body), source: message.from_run_id ? 'agent' : 'client' })) };
