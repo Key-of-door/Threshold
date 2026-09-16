@@ -9,6 +9,26 @@ You do not need to copy the previous conversation.
 Early alpha: one machine, trusted local user. Pi runs the Agent; Git holds the code; SQLite holds project state.
 Optional capabilities are not required for the first workflow.
 
+## See it in action
+
+**The coordinator leaves. The work continues.** Two peer workers use separate Git worktrees;
+a fresh coordinating Run reads Project state and Git, then reviews and integrates their work.
+
+![Peer workers continue after their coordinator ends, and a fresh Run picks up the project](docs/media/peer-collaboration.gif)
+
+<details>
+<summary>Different Runs. Different capabilities. Same Project.</summary>
+
+Select a reviewer, compose GitHub read with it, then start a Run with no optional capabilities.
+Messages carry findings between independent workers; the next worker checks them against the actual code.
+
+![Run-local capability selection, a shared review finding, and independent verification by a fresh worker](docs/media/run-capabilities.gif)
+
+</details>
+
+These are edited recordings of the real CLI from September 2026; pauses are cut and captions are editorial.
+Capability selection is shown separately from observed tool use. [Start here](#install) to try it yourself.
+
 ## Install
 
 You need **Node 24.18+**, npm, Git, and a working Pi provider/model configuration.
