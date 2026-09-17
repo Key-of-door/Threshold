@@ -1,0 +1,61 @@
+name: Bug or friction · 问题与使用摩擦
+description: Something broke, felt confusing, or made your work harder. 小问题和使用摩擦也欢迎。
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Tell us what you're trying to do, and what happened.**
+        You do not need to prove this is a bug. Configuration trouble, confusing commands and small frustrations are welcome.
+        不必先证明这是 bug；配置麻烦、命令不自然、状态看不懂，都可以告诉我们。
+
+        **English and 中文 are both welcome.**
+        Please remove API keys, credentials and sensitive project data. Do not attach or paste the full `auth.json`.
+        请移除 API key、凭据和项目敏感信息，不要上传或粘贴完整的 `auth.json`。
+  - type: textarea
+    id: trying-to-do
+    attributes:
+      label: What were you trying to do? · 你当时想做什么？
+      description: A short description of your workflow is enough. 简单说说当时的工作就好。
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened? · 实际发生了什么？
+      description: Tell us where you got stuck or confused. 不确定原因也没关系。
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Threshold version · 版本（选填）
+      description: If available, paste the output of threshold --version. 不知道可以留空。
+    validations:
+      required: false
+  - type: input
+    id: environment
+    attributes:
+      label: OS / environment · 系统与环境（选填）
+      placeholder: Windows + PowerShell, Ubuntu on WSL2, macOS, …
+    validations:
+      required: false
+  - type: textarea
+    id: steps
+    attributes:
+      label: Commands or reproduction steps · 命令或复现步骤（选填）
+      description: Share what you remember; a minimal reproduction is welcome but not required. 记得哪些步骤就写哪些。
+    validations:
+      required: false
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / screenshots · 日志或截图（选填）
+      description: Relevant excerpts are enough. Check screenshots for secrets too; do not include the full auth.json. 只需相关片段，截图也请检查敏感信息。
+    validations:
+      required: false
+  - type: textarea
+    id: anything-else
+    attributes:
+      label: Anything else · 其他补充（选填）
+    validations:
+      required: false

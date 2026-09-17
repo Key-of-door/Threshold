@@ -9,6 +9,10 @@ You do not need to copy the previous conversation.
 Early alpha: one machine, trusted local user. Pi runs the Agent; Git holds the code; SQLite holds project state.
 Optional capabilities are not required for the first workflow.
 
+[Report a problem or friction](https://github.com/Key-of-door/Threshold/issues/new/choose) ·
+[Questions, experiments and community](https://github.com/Key-of-door/Threshold-capability/discussions) ·
+English / 中文 welcome.
+
 ## See it in action
 
 **The coordinator leaves. The work continues.** Two peer workers use separate Git worktrees;
@@ -230,6 +234,20 @@ any runtime marker or retrying a failed startup.
 Normal development does not need a deployment approval. Current Risk STOP demonstrates only local `fake_deploy`;
 it is not a universal shell/network safety layer or a real remote-operation guarantee.
 The service listens only on loopback and is for a trusted local OS user. Do not expose it as a multi-user/network server.
+
+## Community and feedback
+
+**Tell us what you're trying to do, and what happened.** Small problems and rough observations
+are welcome; you do not need to prove a bug or arrive with a finished solution.
+
+- Problems using Threshold, confusing behavior or workflow improvements → [Threshold Issues](https://github.com/Key-of-door/Threshold/issues/new/choose).
+- Questions, capabilities, experiments and community ideas → [Threshold-capability Discussions](https://github.com/Key-of-door/Threshold-capability/discussions).
+- Bugs in the cookbook's scheduler, read-doc, github-read or example code → [Threshold-capability Issues](https://github.com/Key-of-door/Threshold-capability/issues).
+
+Not sure where it belongs? Start where it makes sense to you; we can help find the right place.
+**English and 中文 are both welcome.** 小问题也欢迎，不需要先形成一个漂亮结论。
+Please remove API keys, credentials and sensitive project data from text, logs and screenshots.
+Do not attach or paste the full `auth.json`. 请勿上传完整凭据文件。
 
 ## License
 

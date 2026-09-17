@@ -1,0 +1,40 @@
+name: Improvement · 改进建议
+description: Tell us about a real workflow and the experience you would like. 分享真实场景与期待的体验。
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Tell us what you're trying to do, and what happened.**
+        A real workflow and a rough idea are enough. You do not need an implementation plan or to choose which part of Threshold should change.
+        不需要完整实现方案，也不必先判断应该改 core、capability 还是界面。
+
+        **English and 中文 are both welcome.**
+        Please remove API keys, credentials and sensitive project data. Do not attach or paste the full `auth.json`.
+        请移除 API key、凭据和项目敏感信息，不要上传或粘贴完整的 `auth.json`。
+  - type: textarea
+    id: workflow
+    attributes:
+      label: What real workflow are you trying to improve? · 想改善什么实际工作流程？
+      description: Describe what you are trying to get done. 说说你想完成的事情。
+    validations:
+      required: true
+  - type: textarea
+    id: friction
+    attributes:
+      label: What feels difficult or missing today? · 现在什么地方困难或有缺口？
+    validations:
+      required: true
+  - type: textarea
+    id: desired-outcome
+    attributes:
+      label: What would a better experience look like? · 希望体验变成什么样？（选填）
+      description: A rough description is fine; leave blank if you are not sure yet. 没想好也没关系。
+    validations:
+      required: false
+  - type: textarea
+    id: proposed-solution
+    attributes:
+      label: Proposed solution · 可能的做法（选填）
+      description: Only if you have one. No architecture proposal is needed. 有想法就写，不要求设计文档。
+    validations:
+      required: false
