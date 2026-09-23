@@ -9,6 +9,7 @@ import { selectCapabilities } from './capabilities.mjs';
 import { liveActivity } from './run-live.mjs';
 import { checkModel, modelChoices } from './pi-config.mjs';
 import { runtimeError } from './runtime-error.mjs';
+import { runSettings, validateModelSettings, observedModelSettings } from './run-settings.mjs';
 
 const problem = (status, message) => Object.assign(new Error(message), { status });
 const text = (value, name, max = 12000) => {
@@ -81,14 +82,16 @@ export async function startService({ home, agentDir, port = 8765, workerFactory 
       if (store.task(taskId).project_id !== store.task(run.task_id).project_id) throw problem(403, 'Task belongs to another Project');
       return taskId;
     };
-    async function launch(taskId, provider, model, objective, skills, extensions, workspace, startedBy = null, interactive = false) {
+    async function launch(taskId, provider, model, objective, skills, extensions, workspace, startedBy = null, interactive = false, settings) {
       if (typeof interactive !== 'boolean') throw problem(400, 'interactive must be a boolean');
+      let requested;
+      try { requested = runSettings(settings); } catch (error) { throw problem(400, error.message); }
       const project = store.project(store.task(taskId).project_id);
       if (project.archived_at) throw problem(409, `Project is archived. Run threshold project restore ${project.id} before starting new work.`);
       // A selected Pi extension may register its own provider/auth at startup.
       // Let Pi resolve that path; generic preflight cannot assume its semantics.
       if (workerFactory === startPi && !extensions?.length) {
-        try { await checkModel(agentDir, provider, model); }
+        try { validateModelSettings(await checkModel(agentDir, provider, model), requested); }
         catch (error) { throw problem(400, error.message); }
       }
       // Resource checks and insertion below stay synchronous after model preflight.
@@ -105,7 +108,7 @@ export async function startService({ home, agentDir, port = 8765, workerFactory 
       try { capabilities = selectCapabilities(skills, extensions); }
       catch { throw problem(400, 'Invalid capability selection: use existing absolute local skill or extension file paths'); }
       // No await between resource checks and the durable insert; all launch routes share this path.
-      const run = store.startRun(taskId, provider, model, objective, capabilities, repo, startedBy);
+      const run = store.startRun(taskId, provider, model, objective, capabilities, repo, startedBy, requested);
       const token = randomBytes(32).toString('hex');
       let endRequested;
       const end = new Promise(resolve => { endRequested = resolve; });
@@ -114,11 +117,12 @@ export async function startService({ home, agentDir, port = 8765, workerFactory 
         observation: { source: 'runtime_events_in_memory', toolCalls: 0, toolNames: [], checkpointRead: null, agentEnd: false } };
       jobs.set(run.id, job); tokens.set(token, run);
       job.done = (async () => {
-        let error, stage = 'runtime startup', exit = { code: null };
+        let error, settingsFailed = false, settingsFailure, stage = 'runtime startup', exit = { code: null };
         try {
-          job.worker = workerFactory({ cwd: job.repo, agentDir, provider, model, capabilities,
+          job.worker = workerFactory({ cwd: job.repo, agentDir, provider, model, capabilities, modelSettings: requested,
             env: { THRESHOLD_SERVICE_URL: url, THRESHOLD_RUN_TOKEN: token },
             onEvent(event) {
+              if (event.type === 'extension_error' && event.event === 'session_start') settingsFailed = true;
               job.live.observe(event);
               if (event.type === 'agent_start') job.phase = 'working';
               if (event.type === 'agent_settled') {
@@ -139,6 +143,12 @@ export async function startService({ home, agentDir, port = 8765, workerFactory 
             } });
           const native = await job.worker.request('get_state');
           if (!native?.sessionId) throw new Error('Pi did not return a sessionId');
+          stage = 'Run settings';
+          try {
+            const effective = observedModelSettings(native, requested);
+            if (settingsFailed && Object.keys(requested).length) throw new Error('A Pi startup extension failed; Run settings could not be verified. No model turn started');
+            store.recordModelSettings(run.id, effective);
+          } catch (caught) { settingsFailure = caught.message; throw caught; }
           store.running(run.id, native.sessionId);
           if (capabilities.skills.length) {
             stage = 'capability catalog loading';
@@ -168,7 +178,7 @@ export async function startService({ home, agentDir, port = 8765, workerFactory 
           }
         } catch (caught) {
           // Provider errors can contain credentials. Do not persist raw provider output.
-          const reason = runtimeError(caught);
+          const reason = settingsFailure ?? runtimeError(caught);
           error = `${stage}: ${reason}. ${stage === 'runtime startup' ? 'Check Pi installation and agent-dir.' : stage === 'capability catalog loading' ? 'Check selected skill/extension paths and compatibility.' : 'Check provider/model configuration and runtime availability.'} Re-observe project state before continuing.`;
         } finally {
           job.ready = false;
@@ -222,7 +232,7 @@ export async function startService({ home, agentDir, port = 8765, workerFactory 
             const taskId = sameProjectTask(run, text(data.taskId, 'taskId'));
             return reply(202, await launch(taskId, data.provider === undefined ? run.provider : text(data.provider, 'provider', 100),
               data.model === undefined ? run.model : text(data.model, 'model', 200),
-              text(data.objective, 'objective', 6000), data.skills, data.extensions, text(data.workspacePath, 'workspacePath'), run.id));
+              text(data.objective, 'objective', 6000), data.skills, data.extensions, text(data.workspacePath, 'workspacePath'), run.id, false, data.modelSettings));
           }
           const projectRun = path.match(/^\/agent\/project\/runs\/([^/]+)$/);
           if (method === 'GET' && projectRun) {
@@ -310,7 +320,7 @@ export async function startService({ home, agentDir, port = 8765, workerFactory 
           const run = tokens.get(req.headers.authorization?.replace(/^Bearer /, ''));
           if (run) sameProjectTask(run, taskRoute[1]);
           return reply(202, await launch(taskRoute[1], text(data.provider, 'provider', 100), text(data.model, 'model', 200),
-            data.objective === undefined ? null : text(data.objective, 'objective', 6000), data.skills, data.extensions, data.workspacePath, run?.id, data.interactive));
+            data.objective === undefined ? null : text(data.objective, 'objective', 6000), data.skills, data.extensions, data.workspacePath, run?.id, data.interactive, data.modelSettings));
         }
         const runRoute = path.match(/^\/runs\/([^/]+)(\/(?:stop|live|input|recover))?$/);
         if (runRoute) {

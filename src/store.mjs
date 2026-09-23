@@ -6,7 +6,7 @@ export function openStore(path) {
   const db = new DatabaseSync(path);
   db.exec('PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000; PRAGMA synchronous=FULL;');
   const version = db.prepare('PRAGMA user_version').get().user_version;
-  if (version > 7) { db.close(); throw new Error('Database is newer than this service'); }
+  if (version > 8) { db.close(); throw new Error('Database is newer than this service'); }
   if (version === 0) db.exec(`BEGIN IMMEDIATE;
     CREATE TABLE projects (id TEXT PRIMARY KEY, name TEXT NOT NULL, repo_path TEXT NOT NULL UNIQUE, created_at TEXT NOT NULL);
     CREATE TABLE tasks (id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id), title TEXT NOT NULL, instructions TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'in_progress');
@@ -38,7 +38,11 @@ export function openStore(path) {
   if (version < 7) db.exec(`BEGIN IMMEDIATE;
     ALTER TABLE projects ADD COLUMN archived_at TEXT;
     PRAGMA user_version=7; COMMIT;`);
+  if (version < 8) db.exec(`BEGIN IMMEDIATE;
+    ALTER TABLE runs ADD COLUMN model_settings_json TEXT;
+    PRAGMA user_version=8; COMMIT;`);
   const readRun = row => row ? { ...row,
+    modelSettings: row.model_settings_json ? JSON.parse(row.model_settings_json) : null, model_settings_json: undefined,
     capabilities: row.capabilities_json ? JSON.parse(row.capabilities_json) : null, capabilities_json: undefined,
     workspace_recovery: row.workspace_recovery_json ? JSON.parse(row.workspace_recovery_json) : null, workspace_recovery_json: undefined } : undefined;
   db.prepare("UPDATE runs SET status='unknown', error='Service restarted without a process exit observation' WHERE status IN ('starting','running')").run();
@@ -144,11 +148,11 @@ export function openStore(path) {
       db.prepare('INSERT INTO checkpoints VALUES (?,?,?,?,?,?)').run(checkpoint.id, taskId, runId, summary, JSON.stringify(git), checkpoint.created_at);
       return checkpoint;
     },
-    startRun(taskId, provider, model, objective = null, capabilities = { skills: [], extensions: [] }, workspacePath, startedBy = null) {
+    startRun(taskId, provider, model, objective = null, capabilities = { skills: [], extensions: [] }, workspacePath, startedBy = null, modelSettings = {}) {
       const task = requiredTask(taskId);
       activeProject(task.project_id);
       const id = randomUUID();
-      db.prepare("INSERT INTO runs(id,task_id,provider,model,status,started_at,objective,capabilities_json,workspace_path,started_by_run_id) VALUES (?,?,?,?,'starting',?,?,?,?,?)").run(id, taskId, provider, model, now(), objective, JSON.stringify(capabilities), workspacePath ?? this.project(task.project_id).repo_path, startedBy);
+      db.prepare("INSERT INTO runs(id,task_id,provider,model,status,started_at,objective,capabilities_json,workspace_path,started_by_run_id,model_settings_json) VALUES (?,?,?,?,'starting',?,?,?,?,?,?)").run(id, taskId, provider, model, now(), objective, JSON.stringify(capabilities), workspacePath ?? this.project(task.project_id).repo_path, startedBy, JSON.stringify({ requested: modelSettings, effective: null }));
       return this.run(id);
     },
     runCount: () => db.prepare('SELECT COUNT(*) AS n FROM runs').get().n,
@@ -181,6 +185,10 @@ export function openStore(path) {
       }), summariesTruncatedAt: 500 };
     },
     run: id => readRun(db.prepare('SELECT * FROM runs WHERE id=?').get(id)),
+    recordModelSettings(id, effective) {
+      const settings = this.run(id).modelSettings;
+      db.prepare('UPDATE runs SET model_settings_json=? WHERE id=?').run(JSON.stringify({ ...settings, effective }), id);
+    },
     running(id, sessionId) { db.prepare("UPDATE runs SET status='running',session_id=? WHERE id=?").run(sessionId, id); },
     endRun(id, exit, error) { db.prepare("UPDATE runs SET status='ended',ended_at=?,exit_code=?,error=? WHERE id=?").run(now(), exit.code, error ?? null, id); },
     decide(taskId, target, decision) {

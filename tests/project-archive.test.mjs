@@ -29,7 +29,7 @@ test('v6 migration, archive, restart and restore preserve project history and re
   store.updateTaskStatus(task.id, 'done', 'First increment complete', run.id);
   store.decide(task.id, 'staging', 'deny');
   // Exercise startup from the actual preceding layout with meaningful history.
-  store.db.exec('ALTER TABLE projects DROP COLUMN archived_at; PRAGMA user_version=6;');
+  store.db.exec('ALTER TABLE runs DROP COLUMN model_settings_json; ALTER TABLE projects DROP COLUMN archived_at; PRAGMA user_version=6;');
   store.close();
 
   const options = { home, agentDir: home, port: 0 };

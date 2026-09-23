@@ -10,6 +10,7 @@ import { defaultHome, display, help, commandNames } from './cli-display.mjs';
 import { terminalOptions, displayError } from './cli-format.mjs';
 import { prompts } from './cli-input.mjs';
 import { readServiceInfo, serviceState, startBackground } from './service-process.mjs';
+import { runSettings } from './run-settings.mjs';
 
 const fullId = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i;
 async function main() {
@@ -21,7 +22,7 @@ async function main() {
   };
   try {
     ({ values: args, positionals: commands } = parseArgs({ allowPositionals: true, options: {
-      ...Object.fromEntries(['home', 'agent-dir', 'port', 'name', 'repo', 'project', 'title', 'instructions', 'instructions-file', 'task', 'provider', 'model', 'run', 'target', 'value', 'objective', 'status', 'note', 'body', 'body-file', 'after', 'limit', 'workspace', 'max-parallel-runs', 'max-runs'].map(key => [key, { type: 'string' }])),
+      ...Object.fromEntries(['home', 'agent-dir', 'port', 'name', 'repo', 'project', 'title', 'instructions', 'instructions-file', 'task', 'provider', 'model', 'run', 'target', 'value', 'objective', 'status', 'note', 'body', 'body-file', 'after', 'limit', 'workspace', 'max-parallel-runs', 'max-runs', 'thinking', 'context-window', 'max-output-tokens'].map(key => [key, { type: 'string' }])),
       skill: { type: 'string', multiple: true }, extension: { type: 'string', multiple: true },
       ...Object.fromEntries(['summary', 'json', 'all', 'include-archived', 'help', 'version', 'ascii', 'no-color', 'attach', 'confirm-reusable', 'init-git'].map(key => [key, { type: 'boolean' }])) } }));
   } catch (error) { report(`${error.message}\nRun threshold --help.`); return 1; }
@@ -29,6 +30,18 @@ async function main() {
   const runPosition = commands[0] === 'run' && ['stop', 'attach', 'recover'].includes(commands[1]) && commands.length === 3 ? commands.pop() : undefined;
   const projectPosition = commands[0] === 'project' && ['archive', 'restore'].includes(commands[1]) && commands.length === 3 ? commands.pop() : undefined;
   const command = commands.join(' ');
+  let modelSettings;
+  if (['thinking', 'context-window', 'max-output-tokens'].some(key => args[key] !== undefined)) {
+    if (command !== 'run') { report('Model settings apply only to a new Run: threshold run.'); return 1; }
+    try {
+      const number = key => {
+        if (args[key] === undefined) return undefined;
+        if (!/^[1-9][0-9]*$/.test(args[key])) throw new Error(`--${key} requires a positive integer token count`);
+        return Number(args[key]);
+      };
+      modelSettings = runSettings({ thinking: args.thinking, contextWindow: number('context-window'), maxOutputTokens: number('max-output-tokens') });
+    } catch (error) { report(error); return 1; }
+  }
   const presentation = { ...terminalOptions(process.stdout, args), version: JSON.parse(readFileSync(new URL('../package.json', import.meta.url))).version, home: args.home && resolve(args.home) };
   if (!command || args.help) { console.log(help(command, presentation)); return command && !commandNames.includes(command) && !['project', 'task', 'message', 'service'].includes(command) ? 1 : 0; }
   if (command === 'stop') { report('Choose what to stop: threshold run stop ID, or threshold service stop. No action taken.'); return 1; }
@@ -234,6 +247,7 @@ async function main() {
       }
       const task = required('task'), provider = required('provider'), model = required('model');
       const run = await call(`/tasks/${await entity('task', task)}/runs`, { provider, model, objective: args.objective,
+        modelSettings,
         interactive: Boolean(args.attach), workspacePath: args.workspace && resolve(args.workspace), skills: args.skill?.map(path => resolve(path)), extensions: args.extension?.map(path => resolve(path)) });
       if (args.attach) await attach(run.id); else print(run);
     } else if (command === 'run attach') {

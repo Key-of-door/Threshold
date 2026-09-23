@@ -170,6 +170,41 @@ Unavailable runtime observations after restart are not displayed as zero activit
 Commands printed as next steps carry an explicit `--home` selection when supplied. Only an attached
 terminal polls live activity; ordinary queries return immediately.
 
+## Per-Run model settings
+
+```sh
+threshold run --task ID --provider PROVIDER --model MODEL --thinking high --context-window 64000 --max-output-tokens 2048
+```
+
+All three flags are optional and apply only to the new Run, including an interactive Run.
+They do not edit Pi configuration, change existing Runs, or carry into the next Run.
+The service API accepts the same selection as `modelSettings: { thinking, contextWindow, maxOutputTokens }`.
+Agent-started Runs also default to an empty selection; they do not inherit these values from their caller.
+
+- `--thinking`: `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`, subject to the model's supported levels. Unsupported explicit levels fail instead of silently being clamped.
+- `--context-window`: a positive integer token count used by Pi for context management/compaction. It cannot exceed the window declared in the selected Pi model catalog/configuration. It does not expand the provider's actual capacity or promise that all of the window is available for input.
+- `--max-output-tokens`: a positive integer ceiling for one response, not a total Run budget or a requested answer length. It cannot exceed the declared model output ceiling or selected context window. Pi may lower the actual request limit to fit remaining context; reasoning may share this allowance. OpenAI Responses requires at least 16.
+
+The current pinned adapter verifies output-limit forwarding for `openai-completions`, `openai-responses` (unless disabled by model compatibility settings), and `anthropic-messages`.
+Other transports reject an explicit output cap until that path is verified. In particular, ChatGPT subscription login (`openai-codex`) currently does **not** forward an output cap:
+
+```sh
+threshold run --task ID --provider openai-codex --model gpt-5.5 --thinking high --attach
+```
+
+Without flags, existing behavior remains: Threshold asks Pi for `low` thinking (Pi may map this to `off` for a non-reasoning model), and Pi supplies its configured context/output defaults.
+Conflicting thinking/output fields in Pi `samplingParams` must be removed before selecting the corresponding flag; they must not silently override the Run's request.
+If a model catalog entry understates a capacity supported by your provider, correct that model's Pi `models.json` entry first; these flags never bypass that declaration.
+
+`threshold status --run ID` and `--json` expose `modelSettings.requested` and `modelSettings.effective`.
+Effective values are observed from Pi **at startup before the first model turn**, not measurements of every later request or a guarantee of provider enforcement.
+For provider-managed/unverified output limits, `maxOutputTokens` is `null` and `outputLimit` explains why.
+Pending/failed startup and historical Runs have no effective observation; old Runs are not assigned invented defaults.
+Extensions may later change models or settings; the startup record is not a continuous monitor.
+
+Known model/configuration errors reject creation before allocating a Run. Extension-defined models are resolved inside Pi;
+if their settings cannot be applied and verified, the created Run ends with an explicit error before its first model turn.
+
 ## Interactive Runs
 
 ```sh

@@ -1,7 +1,20 @@
 import { Type } from 'typebox';
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
+import { runSettings, validateModelSettings } from './run-settings.mjs';
 
 export default function (pi: ExtensionAPI) {
+  pi.on('session_start', async (_event, ctx) => {
+    const requested = runSettings(JSON.parse(process.env.THRESHOLD_MODEL_SETTINGS ?? '{}'));
+    if (!Object.keys(requested).length) return;
+    validateModelSettings(ctx.model, requested);
+    if (requested.contextWindow !== undefined || requested.maxOutputTokens !== undefined) {
+      const model = { ...ctx.model!, ...(requested.contextWindow !== undefined ? { contextWindow: requested.contextWindow } : {}),
+        ...(requested.maxOutputTokens !== undefined ? { maxTokens: requested.maxOutputTokens } : {}) };
+      if (!await pi.setModel(model)) throw new Error('Pi could not apply Run model settings');
+    }
+    // setModel may restore Pi defaults. Retain Threshold's existing low default.
+    pi.setThinkingLevel(requested.thinking ?? 'low');
+  });
   async function call(path: string, signal?: AbortSignal, body?: unknown) {
     const url = process.env.THRESHOLD_SERVICE_URL;
     if (!url) throw new Error('Threshold service URL is not configured');

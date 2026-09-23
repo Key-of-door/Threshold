@@ -50,6 +50,7 @@ export async function checkModel(agentDir, provider, id) {
   const runtime = await modelRuntime(agentDir, [provider]);
   if (!runtime.getModel(provider, id)) throw new Error('Model not found in Pi configuration. Run threshold setup, or check --provider and --model. No Run started.');
   if (!runtime.hasConfiguredAuth(provider)) throw new Error('API key or provider login is missing in the service environment/Pi configuration. Run threshold setup, or set the provider environment variable before starting the service. No Run started.');
+  return runtime.getModel(provider, id);
 }
 
 // Pi remains the owner of provider configuration, credential storage and model calls.

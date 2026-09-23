@@ -17,7 +17,9 @@ function setup() {
     let finish;
     const ended = new Promise(resolve => { finish = resolve; });
     workers.push({ ...options, finish, key: options.env.THRESHOLD_RUN_TOKEN });
-    return { request: async () => ({ sessionId: `session-${workers.length}` }), turn: () => ended,
+    return { request: async () => ({ sessionId: `session-${workers.length}`,
+      thinkingLevel: options.modelSettings?.thinking ?? 'low',
+      model: { reasoning: true, api: 'openai-completions', contextWindow: options.modelSettings?.contextWindow ?? 128000, maxTokens: 4096 } }), turn: () => ended,
       stop: async () => { finish(); return { code: 0 }; } };
   };
   return { home, repo, a, b, workers, workerFactory };
@@ -43,18 +45,20 @@ test('peers use distinct worktrees, retain workers after scheduler exits, and a 
   const call = client(service);
   try {
     const { project, task } = await create(call, env.repo);
-    const s1 = (await call(`/tasks/${task.id}/runs`, normal)).data;
+    const s1 = (await call(`/tasks/${task.id}/runs`, { ...normal, modelSettings: { thinking: 'high', contextWindow: 64000 } })).data;
     const key = env.workers[0].key;
     const a = (await call('/agent/project/tasks', { title: 'A', instructions: 'Implement A', projectId: 'forged' }, key)).data;
     const b = (await call('/agent/project/tasks', { title: 'B', instructions: 'Implement B' }, key)).data;
     assert.equal(a.project_id, project.id);
     const [ra, rb] = await Promise.all([
       call('/agent/project/runs', { taskId: a.id, workspacePath: env.a, objective: 'A', startedBy: 'forged' }, key),
-      call('/agent/project/runs', { taskId: b.id, workspacePath: env.b, objective: 'B' }, key),
+      call('/agent/project/runs', { taskId: b.id, workspacePath: env.b, objective: 'B', modelSettings: { thinking: 'medium' } }, key),
     ]);
     assert.equal(ra.status, 202); assert.equal(rb.status, 202);
     assert.equal(ra.data.started_by_run_id, s1.id);
     assert.deepEqual(ra.data.capabilities, { skills: [], extensions: [] });
+    assert.deepEqual(ra.data.modelSettings.requested, {}, 'peer does not inherit caller model settings');
+    assert.deepEqual(rb.data.modelSettings.requested, { thinking: 'medium' }, 'peer selection is explicit');
     assert.deepEqual(env.workers.slice(1).map(worker => worker.cwd).sort(), [env.a, env.b].sort());
     const workerKey = env.workers.find(worker => worker.cwd === env.a).key;
     // Ordinary Project API: no file identity or scheduler-role check. Tool exposure belongs to the extension.

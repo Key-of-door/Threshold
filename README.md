@@ -153,6 +153,12 @@ threshold message read --task TASK_ID
 An ended Run is not automatically a completed Task. Task detail includes instructions, checkpoint and recent Runs;
 the worker can explicitly update Task status and leave messages.
 
+Optional Run-local controls: `--thinking high`, `--context-window TOKENS`, and
+`--max-output-tokens TOKENS`. Unsupported values fail explicitly; settings do not
+change global Pi configuration or carry into the next Run. ChatGPT subscription
+(`openai-codex`) supports thinking/context selection but currently cannot set an
+output cap. See [model settings and their limits](docs/user-guide.md#per-run-model-settings).
+
 To talk to the same worker over multiple rounds, add `--attach` when starting it:
 
 ```sh

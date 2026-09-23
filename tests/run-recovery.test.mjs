@@ -21,7 +21,7 @@ test('restart UNKNOWN retains occupancy until explicit client recovery, without 
   const old = store.startRun(task.id, 'fixture', 'fixture', 'Old work', undefined, repo);
   store.running(old.id, 'old-session');
   // Persist exactly the pre-release v5 layout, exercising the additive migration on restart.
-  store.db.exec('ALTER TABLE runs DROP COLUMN workspace_recovery_json; ALTER TABLE projects DROP COLUMN archived_at; PRAGMA user_version=5;');
+  store.db.exec('ALTER TABLE runs DROP COLUMN model_settings_json; ALTER TABLE runs DROP COLUMN workspace_recovery_json; ALTER TABLE projects DROP COLUMN archived_at; PRAGMA user_version=5;');
   store.close();
   let starts = 0, stops = 0;
   const workerFactory = () => {
