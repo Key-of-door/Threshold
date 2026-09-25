@@ -9,8 +9,8 @@
         "name": "DeepSeek Flash",
         "reasoning": true,
         "input": ["text"],
-        "contextWindow": 128000,
-        "maxTokens": 4096,
+        "contextWindow": 1000000,
+        "maxTokens": 384000,
         "thinkingLevelMap": {"minimal": null, "low": "low", "medium": null, "high": "high", "max": "max"},
         "compat": {"supportsStore": false, "supportsDeveloperRole": false, "maxTokensField": "max_tokens", "requiresReasoningContentOnAssistantMessages": true, "thinkingFormat": "deepseek"}
       }]

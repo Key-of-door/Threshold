@@ -25,6 +25,9 @@ function fixture(baseUrl = 'http://127.0.0.1:1/v1') {
 }
 
 test('settings reject malformed/unsupported values and report exact startup values', () => {
+  assert.throws(() => validateModelSettings(model, { contextWindow: 512000 }, '/fixture/pi/models.json'), error =>
+    /fixture\/fixture/.test(error.message) && /requested contextWindow=512000/.test(error.message)
+    && /ceiling=128000/.test(error.message) && /not a provider rejection/.test(error.message) && error.message.includes('/fixture/pi/models.json'));
   for (const value of [null, [], { other: 1 }, { thinking: 'ultra' }, { contextWindow: '100' }, { maxOutputTokens: 0 }, { contextWindow: 1.1 }, { maxOutputTokens: Infinity }]) assert.throws(() => runSettings(value));
   assert.throws(() => validateModelSettings(model, { thinking: 'minimal' }), /unsupported/);
   assert.throws(() => validateModelSettings(model, { thinking: 'xhigh' }), /unsupported/);
@@ -125,7 +128,7 @@ test('v7 migration keeps old Run settings unknown and preserves history', () => 
   const p = store.createProject('old', repo), t = store.createTask(p.id, 'old', 'old');
   const r = store.startRun(t.id, 'fixture', 'fixture'); store.endRun(r.id, { code: 0 });
   store.sendMessage(t.id, 'keep', r.id);
-  store.db.exec('ALTER TABLE runs DROP COLUMN model_settings_json; PRAGMA user_version=7;'); store.close();
+  store.db.exec('ALTER TABLE runs DROP COLUMN execution_json; ALTER TABLE runs DROP COLUMN model_settings_json; PRAGMA user_version=7;'); store.close();
   store = openStore(path);
   try { assert.equal(store.run(r.id).modelSettings, null); assert.equal(store.readMessages(t.id).messages[0].body, 'keep'); }
   finally { store.close(); }

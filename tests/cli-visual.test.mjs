@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { stripVTControlCharacters } from 'node:util';
 import { display, help } from '../src/cli-display.mjs';
-import { terminalOptions, displayError, preview } from '../src/cli-format.mjs';
+import { terminalOptions, displayError, preview, format } from '../src/cli-format.mjs';
 import stringWidth from 'string-width';
 
 const tty = { isTTY: true, columns: 80, getColorDepth: () => 24 };
@@ -10,6 +10,13 @@ const colorful = terminalOptions(tty, {}, {});
 const run = { id: 'a317c29d-full', task_id: '82e3ec1a-full', provider: 'fixture', model: 'fixture', objective: 'Review actual files',
   status: 'ended', exit_code: 0, error: null, capabilities: { skills: [], extensions: [] } };
 const plain = text => stripVTControlCharacters(text);
+
+test('labels always have a separator, including labels at or beyond the alignment width', () => {
+  for (const label of ['Context window', 'Output ceiling', 'A considerably longer label']) {
+    assert.match(format({ columns: 100 }).pair(label, '272000'), /\s272000$/);
+    assert.match(plain(format({ ...colorful, columns: 100 }).pair(label, '272000')), /\s272000$/);
+  }
+});
 
 test('terminal decorations follow destination, NO_COLOR, dumb terminals and visual flags', () => {
   assert.match(help('', colorful), /╭────╮/);
@@ -52,6 +59,7 @@ test('messages retain order, disagreement and long bodies, and expose continuati
   const control = display({ body: '\x1b[2Jdo not erase other messages\rrewrite', id: 6, source: 'client' });
   assert.doesNotMatch(control, /\x1b|\r/);
   assert.match(control, /do not erase other messages\\rrewrite/);
+  assert.match(plain(display({ body: 'Peer finding', id: 7, source: 'agent', from_run_id: run.id, task_id: '82e3ec1a-full' }, colorful)), /Message saved.*task 82e3ec1a/);
 });
 
 test('capability paths and SHA stay Run-local; selection and missing observations are honest', () => {

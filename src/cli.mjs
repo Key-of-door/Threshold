@@ -11,6 +11,7 @@ import { terminalOptions, displayError } from './cli-format.mjs';
 import { prompts } from './cli-input.mjs';
 import { readServiceInfo, serviceState, startBackground } from './service-process.mjs';
 import { runSettings } from './run-settings.mjs';
+import { executionSettings } from './execution.mjs';
 
 const fullId = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i;
 async function main() {
@@ -22,7 +23,7 @@ async function main() {
   };
   try {
     ({ values: args, positionals: commands } = parseArgs({ allowPositionals: true, options: {
-      ...Object.fromEntries(['home', 'agent-dir', 'port', 'name', 'repo', 'project', 'title', 'instructions', 'instructions-file', 'task', 'provider', 'model', 'run', 'target', 'value', 'objective', 'status', 'note', 'body', 'body-file', 'after', 'limit', 'workspace', 'max-parallel-runs', 'max-runs', 'thinking', 'context-window', 'max-output-tokens'].map(key => [key, { type: 'string' }])),
+      ...Object.fromEntries(['home', 'agent-dir', 'port', 'name', 'repo', 'project', 'title', 'instructions', 'instructions-file', 'task', 'provider', 'model', 'run', 'target', 'value', 'objective', 'status', 'note', 'body', 'body-file', 'after', 'limit', 'workspace', 'max-parallel-runs', 'max-runs', 'thinking', 'context-window', 'max-output-tokens', 'turn-timeout'].map(key => [key, { type: 'string' }])),
       skill: { type: 'string', multiple: true }, extension: { type: 'string', multiple: true },
       ...Object.fromEntries(['summary', 'json', 'all', 'include-archived', 'help', 'version', 'ascii', 'no-color', 'attach', 'confirm-reusable', 'init-git'].map(key => [key, { type: 'boolean' }])) } }));
   } catch (error) { report(`${error.message}\nRun threshold --help.`); return 1; }
@@ -30,6 +31,15 @@ async function main() {
   const runPosition = commands[0] === 'run' && ['stop', 'attach', 'recover'].includes(commands[1]) && commands.length === 3 ? commands.pop() : undefined;
   const projectPosition = commands[0] === 'project' && ['archive', 'restore'].includes(commands[1]) && commands.length === 3 ? commands.pop() : undefined;
   const command = commands.join(' ');
+  let turnTimeoutSeconds;
+  if (args['turn-timeout'] !== undefined) {
+    try {
+      if (command !== 'run') throw new Error('--turn-timeout applies only to a new background Run: threshold run.');
+      if (!/^(0|[1-9][0-9]*)$/.test(args['turn-timeout'])) throw new Error('--turn-timeout requires integer seconds (0 disables the deadline)');
+      turnTimeoutSeconds = Number(args['turn-timeout']);
+      executionSettings(Boolean(args.attach), turnTimeoutSeconds);
+    } catch (error) { report(error); return 1; }
+  }
   let modelSettings;
   if (['thinking', 'context-window', 'max-output-tokens'].some(key => args[key] !== undefined)) {
     if (command !== 'run') { report('Model settings apply only to a new Run: threshold run.'); return 1; }
@@ -247,7 +257,7 @@ async function main() {
       }
       const task = required('task'), provider = required('provider'), model = required('model');
       const run = await call(`/tasks/${await entity('task', task)}/runs`, { provider, model, objective: args.objective,
-        modelSettings,
+        modelSettings, turnTimeoutSeconds,
         interactive: Boolean(args.attach), workspacePath: args.workspace && resolve(args.workspace), skills: args.skill?.map(path => resolve(path)), extensions: args.extension?.map(path => resolve(path)) });
       if (args.attach) await attach(run.id); else print(run);
     } else if (command === 'run attach') {
@@ -259,9 +269,10 @@ async function main() {
     } else if (command === 'run recover') {
       if (runPosition && args.run) throw new Error('Specify the Run once: run recover ID or run recover --run ID.');
       const selected = runPosition ?? required('run');
-      if (!fullId.test(selected)) throw new Error('Recovery requires the full Run ID. Inspect threshold status --run ID first.');
       if (!args['confirm-reusable']) throw new Error('No recovery requested. Independently check that the old worker is gone and the workspace is reusable, then use --confirm-reusable --note TEXT. The old outcome and external effects remain unknown.');
-      print(await call(`/runs/${await entity('run', selected)}/recover`, { confirmReusable: true, note: required('note') }));
+      const resolved = await entity('run', selected);
+      if (!args.json) console.log(`Recovery target: ${resolved}`);
+      print(await call(`/runs/${resolved}/recover`, { confirmReusable: true, note: required('note') }));
     } else if (command === 'service stop') {
       if (args.run || args.task) throw new Error('service stop stops the whole service. To stop one worker: threshold run stop ID.');
       const state = await serviceState(home);

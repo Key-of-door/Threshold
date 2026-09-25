@@ -124,7 +124,7 @@ test('runtime failure exposes known phase/timeout without leaking a raw provider
     const task = await call('/tasks', { projectId: project.id, title: 'Work', instructions: 'test' });
     const run = await call(`/tasks/${task.id}/runs`, { provider: 'fixture', model: 'fixture' });
     let current; do { current = await call(`/runs/${run.id}`); } while (current.status !== 'ended');
-    assert.match(current.error, /model turn: 3-minute turn limit reached/);
+    assert.match(current.error, /model turn: Background turn deadline reached/);
     assert.doesNotMatch(JSON.stringify(current), /raw secret/);
   } finally { await service.close(); }
 });

@@ -56,6 +56,35 @@ test('setup cancellation or malformed existing config does not replace prior fil
   assert.equal(readFileSync(join(dir, 'auth.json'), 'utf8'), '{bad json');
 });
 
+test('setup confirms unknown capacities and preserves existing declarations instead of silently raising them', async () => {
+  const dir = temp(), output = sink();
+  write(join(dir, 'settings.json'), { shellPath: process.execPath });
+  await setupModels(dir, answers(['custom', 'new-model', 'http://127.0.0.1:1/v1', '512000', '300000', 'local-test-key']), output);
+  assert.deepEqual(json(join(dir, 'models.json')).providers.custom.models[0], { id: 'new-model', name: 'new-model', contextWindow: 512000, maxTokens: 300000 });
+  assert.match(output.text, /not an online capability check/);
+  const before = readFileSync(join(dir, 'models.json'), 'utf8');
+  await setupModels(dir, answers(['custom', 'new-model', '']), output);
+  assert.equal(readFileSync(join(dir, 'models.json'), 'utf8'), before);
+  assert.match(output.text, /contextWindow=512000, maxTokens=300000/);
+  assert.doesNotMatch(output.text, /local-test-key/);
+  const badDir = temp(); write(join(badDir, 'settings.json'), { shellPath: process.execPath });
+  await assert.rejects(setupModels(badDir, answers(['custom', 'bad-model', 'http://127.0.0.1:1/v1', '4096', '8192']), sink()), /Output capacity/);
+  assert.equal(existsSync(join(badDir, 'models.json')), false);
+});
+
+test('official Flash setup confirms the documented example capacities and permits the reported large Run settings', async () => {
+  const dir = temp(), output = sink(), seen = [];
+  write(join(dir, 'settings.json'), { shellPath: process.execPath });
+  const values = ['deepseek', 'deepseek-flash', 'https://api.deepseek.com', undefined, undefined, 'local-only-key'];
+  await setupModels(dir, { async ask(label, options) { seen.push({ label, fallback: options?.fallback }); return values.shift() ?? options.fallback; }, async choose() { return 'openai-completions'; } }, output);
+  const entry = json(join(dir, 'models.json')).providers.deepseek.models[0];
+  assert.equal(entry.contextWindow, 1000000); assert.equal(entry.maxTokens, 384000);
+  assert.ok(seen.some(item => item.label === 'Model context capacity (tokens)' && item.fallback === '1000000'));
+  const { validateModelSettings } = await import('../src/run-settings.mjs');
+  const runtime = await modelRuntime(dir, ['deepseek']);
+  assert.doesNotThrow(() => validateModelSettings(runtime.getModel('deepseek', 'deepseek-flash'), { thinking: 'max', contextWindow: 512000, maxOutputTokens: 300000 }));
+});
+
 test('pipes/JSON never prompt for secrets or infer missing Run arguments', async () => {
   const dir = temp();
   await assert.rejects(invoke(dir, 'setup'), e => /interactive terminal/.test(e.stderr));

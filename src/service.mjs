@@ -10,8 +10,15 @@ import { liveActivity } from './run-live.mjs';
 import { checkModel, modelChoices } from './pi-config.mjs';
 import { runtimeError } from './runtime-error.mjs';
 import { runSettings, validateModelSettings, observedModelSettings } from './run-settings.mjs';
+import { executionSettings, defaultTurnTimeoutSeconds } from './execution.mjs';
 
 const problem = (status, message) => Object.assign(new Error(message), { status });
+function requestEnd(job, source) {
+  if (job.stopReason) return;
+  const idle = job.interactive && job.ready && job.phase === 'waiting for input' && !job.inputPending && !(job.queued > 0);
+  job.stopReason = `${source}${idle ? '_idle' : ''}`;
+  job.cancelled = true; job.ready = false; job.phase = 'stopping'; job.endRequested();
+}
 const text = (value, name, max = 12000) => {
   if (typeof value !== 'string' || !value.trim() || value.length > max) throw problem(400, `Invalid ${name}`);
   return value;
@@ -75,23 +82,23 @@ export async function startService({ home, agentDir, port = 8765, workerFactory 
       const path = workspace ?? state.project.repo_path;
       return { ...state, currentGit: { ...observeGit(path), workspace_path: path }, controlled: store.controlledState(taskId) };
     };
-    const resources = () => ({ scope: 'all Runs in this service home, including history', maxParallelRuns, maxRuns,
+    const resources = () => ({ scope: 'all Runs in this service home, including history', maxParallelRuns, maxRuns, defaultTurnTimeoutSeconds,
       unsettled: store.unsettledRuns().length, started: store.runCount(), remainingStarts: Math.max(0, maxRuns - store.runCount()) });
     const board = projectId => ({ ...store.board(projectId), resources: resources() });
     const sameProjectTask = (run, taskId) => {
       if (store.task(taskId).project_id !== store.task(run.task_id).project_id) throw problem(403, 'Task belongs to another Project');
       return taskId;
     };
-    async function launch(taskId, provider, model, objective, skills, extensions, workspace, startedBy = null, interactive = false, settings) {
+    async function launch(taskId, provider, model, objective, skills, extensions, workspace, startedBy = null, interactive = false, settings, turnTimeoutSeconds) {
       if (typeof interactive !== 'boolean') throw problem(400, 'interactive must be a boolean');
-      let requested;
-      try { requested = runSettings(settings); } catch (error) { throw problem(400, error.message); }
+      let requested, execution;
+      try { requested = runSettings(settings); execution = executionSettings(interactive, turnTimeoutSeconds); } catch (error) { throw problem(400, error.message); }
       const project = store.project(store.task(taskId).project_id);
       if (project.archived_at) throw problem(409, `Project is archived. Run threshold project restore ${project.id} before starting new work.`);
       // A selected Pi extension may register its own provider/auth at startup.
       // Let Pi resolve that path; generic preflight cannot assume its semantics.
       if (workerFactory === startPi && !extensions?.length) {
-        try { validateModelSettings(await checkModel(agentDir, provider, model), requested); }
+        try { validateModelSettings(await checkModel(agentDir, provider, model), requested, join(agentDir, 'models.json')); }
         catch (error) { throw problem(400, error.message); }
       }
       // Resource checks and insertion below stay synchronous after model preflight.
@@ -108,7 +115,7 @@ export async function startService({ home, agentDir, port = 8765, workerFactory 
       try { capabilities = selectCapabilities(skills, extensions); }
       catch { throw problem(400, 'Invalid capability selection: use existing absolute local skill or extension file paths'); }
       // No await between resource checks and the durable insert; all launch routes share this path.
-      const run = store.startRun(taskId, provider, model, objective, capabilities, repo, startedBy, requested);
+      const run = store.startRun(taskId, provider, model, objective, capabilities, repo, startedBy, requested, execution);
       const token = randomBytes(32).toString('hex');
       let endRequested;
       const end = new Promise(resolve => { endRequested = resolve; });
@@ -123,9 +130,11 @@ export async function startService({ home, agentDir, port = 8765, workerFactory 
             env: { THRESHOLD_SERVICE_URL: url, THRESHOLD_RUN_TOKEN: token },
             onEvent(event) {
               if (event.type === 'extension_error' && event.event === 'session_start') settingsFailed = true;
-              job.live.observe(event);
-              if (event.type === 'agent_start') job.phase = 'working';
-              if (event.type === 'agent_settled') {
+              const cleanupAbort = event.type === 'message_end' && event.message?.stopReason === 'aborted' && (job.cancelled || job.stopping);
+              // Retain any public partial reply, but do not render our own cleanup as a new model failure.
+              job.live.observe(cleanupAbort ? { ...event, message: { ...event.message, stopReason: undefined } } : event);
+              if (event.type === 'agent_start' && !job.cancelled) job.phase = 'working';
+              if (event.type === 'agent_settled' && !job.cancelled) {
                 job.phase = interactive ? 'waiting for input' : 'settled';
                 if (!interactive) job.ready = false;
               }
@@ -138,14 +147,15 @@ export async function startService({ home, agentDir, port = 8765, workerFactory 
               if (event.type === 'tool_execution_end' && event.toolName === 'read_task' && !event.isError)
                 job.observation.checkpointRead = event.result?.details?.checkpoint?.id ?? null;
               if (event.type === 'agent_end') job.observation.agentEnd = true;
-              if (event.type === 'message_end' && ['error', 'aborted'].includes(event.message?.stopReason))
-                error = `Pi reported model turn ${event.message.stopReason}: ${runtimeError(event.message.errorMessage)}; inspect project state before continuing`;
+              if (event.type === 'message_end' && ['error', 'aborted'].includes(event.message?.stopReason)
+                && !cleanupAbort)
+                error ??= `Pi reported model turn ${event.message.stopReason}: ${runtimeError(event.message.errorMessage)}; inspect project state before continuing`;
             } });
           const native = await job.worker.request('get_state');
           if (!native?.sessionId) throw new Error('Pi did not return a sessionId');
           stage = 'Run settings';
           try {
-            const effective = observedModelSettings(native, requested);
+            const effective = observedModelSettings(native, requested, join(agentDir, 'models.json'));
             if (settingsFailed && Object.keys(requested).length) throw new Error('A Pi startup extension failed; Run settings could not be verified. No model turn started');
             store.recordModelSettings(run.id, effective);
           } catch (caught) { settingsFailure = caught.message; throw caught; }
@@ -171,7 +181,7 @@ export async function startService({ home, agentDir, port = 8765, workerFactory 
             + 'Use update_task_status explicitly if your assessment of the whole Task changes; finishing a Run objective alone does not mean the Task is done. '
             + 'A Task marked done can be reopened as in_progress if work remains. Task status is a work assessment, not Human approval. '
             + 'Do not push. Ordinary work needs no deployment decision. If you cannot finish the objective, record the remaining work honestly before ending.'
-            + (interactive ? ' This is an interactive Run. After each useful increment, save a meaningful checkpoint and reply to the user. You may ask questions and wait for another input. Conversation is temporary and is not a Human Decision; use the existing controlled-operation route.' : ''), interactive ? 0 : undefined);
+            + (interactive ? ' This is an interactive Run. After each useful increment, save a meaningful checkpoint and reply to the user. You may ask questions and wait for another input. Conversation is temporary and is not a Human Decision; use the existing controlled-operation route.' : ''), (execution.turnTimeoutSeconds ?? 0) * 1000);
           if (interactive && !shuttingDown && !job.cancelled) {
             // Settled is idle, not an exit. The worker and its resource slot remain held.
             await Promise.race([end, job.worker.closed ?? new Promise(() => {})]);
@@ -179,15 +189,17 @@ export async function startService({ home, agentDir, port = 8765, workerFactory 
         } catch (caught) {
           // Provider errors can contain credentials. Do not persist raw provider output.
           const reason = settingsFailure ?? runtimeError(caught);
-          error = `${stage}: ${reason}. ${stage === 'runtime startup' ? 'Check Pi installation and agent-dir.' : stage === 'capability catalog loading' ? 'Check selected skill/extension paths and compatibility.' : 'Check provider/model configuration and runtime availability.'} Re-observe project state before continuing.`;
+          if (caught.code === 'THRESHOLD_TURN_TIMEOUT') job.stopReason ??= 'timeout';
+          if (!job.cancelled) error ??= `${stage}: ${reason}. ${caught.code === 'THRESHOLD_TURN_TIMEOUT' ? 'Choose --turn-timeout SECONDS on a new background Run if more time is needed.' : stage === 'runtime startup' ? 'Check Pi installation and agent-dir.' : stage === 'capability catalog loading' ? 'Check selected skill/extension paths and compatibility.' : 'Check provider/model configuration and runtime availability.'} Re-observe project state before continuing.`;
         } finally {
-          job.ready = false;
+          job.ready = false; job.stopping = true;
           if (job.worker) {
             exit = await job.worker.stop();
             if (exit.forced || exit.partialFrame || exit.code !== 0) error ??= 'Pi exit was abnormal; descendant/effect state is not established';
           }
-          if (job.cancelled || shuttingDown) error ??= 'Run interrupted by service/client; inspect workspace before continuing';
-          store.endRun(run.id, exit, error);
+          if (job.stopReason && !job.stopReason.endsWith('_idle') && job.stopReason !== 'timeout')
+            error ??= `Run interrupted by ${job.stopReason === 'client_stop' ? 'client stop' : 'service shutdown'} while not idle; inspect workspace before continuing`;
+          store.endRun(run.id, exit, error, job.stopReason);
           job.active = false; tokens.delete(token);
           job.phase = 'ended';
           // Bound transient runtime metadata; durable Run rows remain available in SQLite.
@@ -205,6 +217,12 @@ export async function startService({ home, agentDir, port = 8765, workerFactory 
         if (shuttingDown) throw problem(503, 'Service is shutting down');
         // Local CLI service; no browser/CORS interface. Actor comes from the credential, never JSON.
         if (req.headers.origin) throw problem(403, 'Browser requests are not supported');
+        // A loopback bind alone does not reject a foreign hostname resolving to it.
+        const servicePort = server.address().port;
+        const hosts = [`127.0.0.1:${servicePort}`, `localhost:${servicePort}`, ...(servicePort === 80 ? ['127.0.0.1', 'localhost'] : [])];
+        const hostHeaders = req.rawHeaders.filter((_, i) => i % 2 === 0 && req.rawHeaders[i].toLowerCase() === 'host');
+        if (hostHeaders.length !== 1 || !hosts.includes(req.headers.host?.toLowerCase())) throw problem(403, 'Host must match this local service address');
+        if (!req.url.startsWith('/') || req.url.startsWith('//')) throw problem(400, 'Use a local relative request path');
         const requestUrl = new URL(req.url, 'http://localhost');
         const path = requestUrl.pathname;
         const readMessages = taskId => store.readMessages(taskId,
@@ -232,7 +250,7 @@ export async function startService({ home, agentDir, port = 8765, workerFactory 
             const taskId = sameProjectTask(run, text(data.taskId, 'taskId'));
             return reply(202, await launch(taskId, data.provider === undefined ? run.provider : text(data.provider, 'provider', 100),
               data.model === undefined ? run.model : text(data.model, 'model', 200),
-              text(data.objective, 'objective', 6000), data.skills, data.extensions, text(data.workspacePath, 'workspacePath'), run.id, false, data.modelSettings));
+              text(data.objective, 'objective', 6000), data.skills, data.extensions, text(data.workspacePath, 'workspacePath'), run.id, false, data.modelSettings, data.turnTimeoutSeconds));
           }
           const projectRun = path.match(/^\/agent\/project\/runs\/([^/]+)$/);
           if (method === 'GET' && projectRun) {
@@ -244,7 +262,8 @@ export async function startService({ home, agentDir, port = 8765, workerFactory 
           if (path === '/agent/messages' && method === 'GET') return reply(200, readMessages(run.task_id));
           if (path === '/agent/messages' && method === 'POST') {
             const data = await body(req);
-            return reply(201, store.sendMessage(run.task_id, text(data.body, 'body', 6000), run.id));
+            const taskId = data.taskId === undefined ? run.task_id : sameProjectTask(run, text(data.taskId, 'taskId', 36));
+            return reply(201, store.sendMessage(taskId, text(data.body, 'body', 6000), run.id));
           }
           if (method === 'POST' && path === '/agent/checkpoints') {
             const data = await body(req);
@@ -304,7 +323,7 @@ export async function startService({ home, agentDir, port = 8765, workerFactory 
         if (taskRoute && method === 'GET' && !taskRoute[2]) return reply(200, context(taskRoute[1]));
         if (taskRoute?.[2] === '/messages') {
           const run = tokens.get(req.headers.authorization?.replace(/^Bearer /, ''));
-          if (run && run.task_id !== taskRoute[1]) throw problem(403, 'Run credential belongs to another task');
+          if (run) sameProjectTask(run, taskRoute[1]);
           if (method === 'GET') return reply(200, readMessages(taskRoute[1]));
           if (method === 'POST') return reply(201, store.sendMessage(taskRoute[1], text((await body(req)).body, 'body', 6000), run?.id));
         }
@@ -320,7 +339,7 @@ export async function startService({ home, agentDir, port = 8765, workerFactory 
           const run = tokens.get(req.headers.authorization?.replace(/^Bearer /, ''));
           if (run) sameProjectTask(run, taskRoute[1]);
           return reply(202, await launch(taskRoute[1], text(data.provider, 'provider', 100), text(data.model, 'model', 200),
-            data.objective === undefined ? null : text(data.objective, 'objective', 6000), data.skills, data.extensions, data.workspacePath, run?.id, data.interactive, data.modelSettings));
+            data.objective === undefined ? null : text(data.objective, 'objective', 6000), data.skills, data.extensions, data.workspacePath, run?.id, data.interactive, data.modelSettings, data.turnTimeoutSeconds));
         }
         const runRoute = path.match(/^\/runs\/([^/]+)(\/(?:stop|live|input|recover))?$/);
         if (runRoute) {
@@ -360,7 +379,7 @@ export async function startService({ home, agentDir, port = 8765, workerFactory 
             return reply(200, store.recoverWorkspace(run.id, text(data.note, 'recovery note', 3000)));
           }
           if (method === 'POST' && runRoute[2] === '/stop') {
-            if (job?.active) { job.cancelled = true; job.ready = false; job.endRequested(); await job.worker?.stop(); await job.done; }
+            if (job?.active) { requestEnd(job, 'client_stop'); await job.worker?.stop(); await job.done; }
             return reply(200, store.run(run.id));
           }
         }
@@ -384,7 +403,7 @@ export async function startService({ home, agentDir, port = 8765, workerFactory 
   function close() {
     return closing ??= (async () => {
       shuttingDown = true;
-      await Promise.all([...jobs.values()].filter(j => j.active).map(async j => { j.ready = false; j.endRequested(); await j.worker?.stop(); await j.done; }));
+      await Promise.all([...jobs.values()].filter(j => j.active).map(async j => { requestEnd(j, 'service_stop'); await j.worker?.stop(); await j.done; }));
       await new Promise(resolve => server.close(resolve));
       store.close();
       unlinkSync(infoPath); unlinkSync(lockPath);

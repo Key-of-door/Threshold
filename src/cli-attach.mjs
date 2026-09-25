@@ -1,6 +1,7 @@
 import { createInterface, clearLine, cursorTo } from 'node:readline';
 import { setTimeout as delay } from 'node:timers/promises';
 import { format, preview } from './cli-format.mjs';
+import { executionLabel } from './execution.mjs';
 
 export function activityText(event, options = {}) {
   const f = format(options);
@@ -27,6 +28,7 @@ export async function attachRun({ id, call, options, input = process.stdin, outp
   write(f.title('Run ' + f.short(id), `${snapshot.run.provider} / ${snapshot.run.model}`));
   write(f.text('dim', `${snapshot.policy ?? 'Unavailable'} worker / conversation is temporary`));
   if (snapshot.run.objective) write(f.pair('Work', snapshot.run.objective));
+  if (snapshot.run.execution) write(f.pair('Execution', executionLabel(snapshot.run.execution)));
   let state;
   function show(value) {
     if (value.truncated) write(f.text('dim', 'Earlier live activity is no longer available.'));
@@ -36,6 +38,7 @@ export async function attachRun({ id, call, options, input = process.stdin, outp
     if (next !== state) {
       write('\n' + (value.active ? f.text('accent', next) : f.state(value.run)));
       if (value.run.error) write(f.text('error', value.run.error));
+      if (!value.active && value.run.execution?.stopReason) write(f.pair('Stop reason', value.run.execution.stopReason));
       if (value.active) write(f.text('dim', `${value.resources.unsettled} of ${value.resources.maxParallelRuns} active/unknown Run slots in use. Waiting workers still occupy a slot.`));
       state = next;
     }

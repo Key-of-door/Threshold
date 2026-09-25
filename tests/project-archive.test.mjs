@@ -29,7 +29,7 @@ test('v6 migration, archive, restart and restore preserve project history and re
   store.updateTaskStatus(task.id, 'done', 'First increment complete', run.id);
   store.decide(task.id, 'staging', 'deny');
   // Exercise startup from the actual preceding layout with meaningful history.
-  store.db.exec('ALTER TABLE runs DROP COLUMN model_settings_json; ALTER TABLE projects DROP COLUMN archived_at; PRAGMA user_version=6;');
+  store.db.exec('ALTER TABLE runs DROP COLUMN execution_json; ALTER TABLE runs DROP COLUMN model_settings_json; ALTER TABLE projects DROP COLUMN archived_at; PRAGMA user_version=6;');
   store.close();
 
   const options = { home, agentDir: home, port: 0 };
@@ -54,8 +54,8 @@ test('v6 migration, archive, restart and restore preserve project history and re
     const archived = await jsonCommand(['project', 'archive', project.id.slice(0, 8)]);
     assert.ok(Number.isFinite(Date.parse(archived.archived_at)));
     assert.deepEqual(await jsonCommand(['project', 'archive', '--project', project.id]), archived);
-    assert.deepEqual((await call('/status')).body, { projects: [], tasks: [] });
-    assert.deepEqual(await jsonCommand(['status', '--all']), { projects: [], tasks: [] });
+    assert.deepEqual((await call('/status')).body, { projects: [], tasks: [], unresolvedRuns: [] });
+    assert.deepEqual(await jsonCommand(['status', '--all']), { projects: [], tasks: [], unresolvedRuns: [] });
     const all = await jsonCommand(['status', '--all', '--include-archived']);
     assert.equal(all.projects[0].archived_at, archived.archived_at);
     assert.equal(all.tasks[0].id, task.id);
@@ -77,7 +77,7 @@ test('v6 migration, archive, restart and restore preserve project history and re
     assert.deepEqual((await call(`/projects/${project.id}/board`)).body.resources, budget);
 
     await service.close(); service = await startService(options);
-    assert.deepEqual((await call('/status')).body, { projects: [], tasks: [] });
+    assert.deepEqual((await call('/status')).body, { projects: [], tasks: [], unresolvedRuns: [] });
     const after = (await call(`/tasks/${task.id}`)).body;
     assert.equal(after.project.archived_at, archived.archived_at);
     assert.deepEqual(after.task, before.task);

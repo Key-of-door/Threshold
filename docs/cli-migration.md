@@ -50,11 +50,28 @@ again with the same home/configuration. npm installation alone does not upgrade 
 - Help/version work without the service. Project registration can infer the Git root; Task creation can
   infer its Project. That CLI-defaults change did not migrate the DB or add automatic capability activation.
 
-This preview changes CLI defaults; it does not change existing Human Decision, Task/Message or execution
-semantics. Existing experiment reports retain their historical commands and identities.
+The earlier preview changed CLI defaults without changing Human Decision or Task/Message semantics. Existing experiment reports retain their historical commands and identities.
 
 The subsequent release-preparation increment adds explicit `run recover` for unknown Runs after a
 restart. Schema v6 adds a nullable `workspace_recovery` marker to Run responses and stores it in SQLite;
-the old `unknown` status and exit observations are unchanged. Full Run IDs, `--confirm-reusable` and a
+the old `unknown` status and exit observations are unchanged. The current CLI accepts unique Run prefixes; `--confirm-reusable` and a
 note are required. See [workspace recovery](user-guide.md#recover-an-unknown-runs-workspace). Back up the
 closed service data directory before upgrading; older service versions cannot open a v6 database.
+
+## Alpha.5: execution, recovery and peer messages
+
+Background Runs change from an implicit 180-second turn deadline to an explicit default of 1800 seconds;
+`run --turn-timeout SECONDS` overrides it, and `0` disables it. Interactive idle stop is neutral only after
+a clean exit; working interruptions and actual errors remain explicit. No automatic finalization is added.
+Schema v9 stores nullable Run execution metadata. Back up the stopped home before upgrading; older
+services cannot open it. `status --all` lists unresolved Runs, and recovery accepts unique scoped prefixes.
+Service Host headers must identify its actual loopback address/port. Local proxies using other Host names
+are rejected; no remote-client interface is introduced. `service status` still exits 0 when inspection
+succeeds, including stopped/stale/unconfirmed states; scripts should inspect `--json` state.
+
+Alpha.5 also adds optional `taskId` to the Agent `send_message` tool and
+`POST /agent/messages`. Omission retains the current Task inbox. Run-authenticated reads/writes on
+`/tasks/:id/messages` now accept other Tasks in the same Project; other Projects are rejected.
+Message response fields, pagination and CLI commands are unchanged. Sender identity remains
+server-bound, and Task status writes remain scoped to the Run's own Task. No additional schema
+change is needed for this cross-Task addressing.

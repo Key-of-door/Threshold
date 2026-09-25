@@ -47,7 +47,7 @@ export function format(options = {}) {
   };
   const short = value => readable(value).slice(0, 8);
   const pair = (label, value, tone) => narrow ? `${text('dim', label)}\n  ${text(tone, value)}`
-    : `${text('dim', label.padEnd(14))}${text(tone, value)}`;
+    : `${text('dim', label.padEnd(14))} ${text(tone, value)}`;
   const title = (name, metadata) => narrow ? `${text('title', name)}${metadata ? '\n'+text('dim', metadata) : ''}`
     : `${text('title', name)}${metadata ? '  '+text('dim', metadata) : ''}`;
   const first = value => readable(value).split(/\r?\n/, 1)[0].trim();

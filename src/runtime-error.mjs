@@ -1,6 +1,6 @@
 // Classify known failures; never include a raw provider message, request or credential.
 export function runtimeError(error) {
-  if (error?.code === 'THRESHOLD_TURN_TIMEOUT') return '3-minute turn limit reached';
+  if (error?.code === 'THRESHOLD_TURN_TIMEOUT') return `Background turn deadline reached${Number.isFinite(error.timeoutMs) ? ` (${error.timeoutMs / 1000}s)` : ''}; no automatic checkpoint or finalization was performed`;
   if (error?.code === 'THRESHOLD_RPC_TIMEOUT') return 'Pi RPC response timed out';
   const message = String(error?.message ?? error ?? '');
   if (/^No API key (?:for|found for)\b/i.test(message) || /authHeader requires a resolved API key/.test(message))

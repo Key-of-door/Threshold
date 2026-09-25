@@ -65,7 +65,8 @@ export async function setupModels(agentDir, ui, output = process.stdout) {
   const model = await ui.ask('Model ID', { fallback: settings.defaultProvider === provider ? settings.defaultModel ?? '' : provider === 'deepseek' ? 'deepseek-flash' : '', required: true });
   const runtime = await modelRuntime(agentDir, [provider]);
   let selected = config.providers?.[provider];
-  if (!runtime.getModel(provider, model)) {
+  const known = runtime.getModel(provider, model);
+  if (!known) {
     const baseUrl = await ui.ask('API base URL', { fallback: selected?.baseUrl ?? (provider === 'deepseek' ? 'https://api.deepseek.com' : ''), required: true });
     const url = new URL(baseUrl);
     if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash)
@@ -73,9 +74,23 @@ export async function setupModels(agentDir, ui, output = process.stdout) {
     const api = selected?.api ?? (provider === 'deepseek' ? 'openai-completions' : await ui.choose('API format',
       ['openai-completions', 'openai-responses', 'anthropic-messages', 'google-generative-ai'].map(id => ({ id, label: id })), 'openai-completions'));
     const example = JSON.parse(readFileSync(new URL('../examples/pi/models.json', import.meta.url))).providers.deepseek.models[0];
-    const entry = provider === 'deepseek' ? { ...example, id: model, name: model } : { id: model };
+    // The documented Flash example is not a capacity promise for arbitrary models or gateways.
+    const officialFlash = provider === 'deepseek' && model === 'deepseek-flash' && url.origin === 'https://api.deepseek.com';
+    output.write('Model is not in the local Pi catalog. Confirm its documented capacity; these are declarations, not an online capability check.\n');
+    const capacity = async (label, fallback) => {
+      const value = await ui.ask(label, { fallback: fallback ? String(fallback) : '', required: true });
+      if (!/^[1-9][0-9]*$/.test(value) || !Number.isSafeInteger(Number(value))) throw new Error(`${label} must be a positive integer. Nothing saved.`);
+      return Number(value);
+    };
+    const contextWindow = await capacity('Model context capacity (tokens)', officialFlash ? example.contextWindow : undefined);
+    const maxTokens = await capacity('Model output capacity (tokens)', officialFlash ? example.maxTokens : undefined);
+    if (maxTokens > contextWindow) throw new Error('Output capacity must not exceed context capacity. Nothing saved.');
+    const entry = { ...(officialFlash ? example : {}), id: model, name: model, contextWindow, maxTokens };
     selected = { ...selected, baseUrl, api, models: [...(selected?.models ?? []), entry] };
   }
+  const capacity = known ?? selected.models.find(entry => entry.id === model);
+  output.write(`Local model capacity: contextWindow=${capacity.contextWindow}, maxTokens=${capacity.maxTokens}\n`);
+  output.write(`Capacity overrides live in ${modelsFile}. Existing declarations are preserved; Run flags cannot raise them.\n`);
   const key = await ui.ask('API key (hidden; Enter keeps existing credentials)', { secret: true });
   if (key && /[\s\x00-\x1f\x7f]/.test(key)) throw new Error('API key must not contain spaces or control characters. Nothing saved.');
   if (!key && !runtime.hasConfiguredAuth(provider)) throw new Error('No existing credential was found. Run threshold setup and enter a key when prompted.');

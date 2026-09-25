@@ -13,8 +13,10 @@ function alive(pid) {
 export async function serviceState(home) {
   const info = readServiceInfo(home);
   let lock;
+  const evidence = () => ({ runtimeMarkers: ['server.lock', 'server.json'].map(name => join(home, name)),
+    recordedProcesses: [...new Set([lock?.pid, info?.pid].filter(pid => Number.isInteger(pid) && pid > 0))].map(pid => ({ pid, exists: alive(pid) })) });
   try { lock = JSON.parse(readFileSync(join(home, 'server.lock'), 'utf8')); }
-  catch (error) { if (error.code !== 'ENOENT') return { state: 'unconfirmed', home }; }
+  catch (error) { if (error.code !== 'ENOENT') return { state: 'unconfirmed', home, ...evidence() }; }
   if (info && alive(info.pid)) {
     try {
       const response = await fetch(new URL('/status', info.url), { signal: AbortSignal.timeout(1500), redirect: 'error' });
@@ -22,15 +24,15 @@ export async function serviceState(home) {
       if (response.ok && Array.isArray(data.projects) && Array.isArray(data.tasks)) return { state: 'running', home, ...info };
     } catch { /* Process may be starting or unresponsive. Do not infer it is dead. */ }
   }
-  if (alive(lock?.pid) || alive(info?.pid)) return { state: 'unconfirmed', home };
-  return { state: info || lock ? 'stale' : 'stopped', home };
+  if (alive(lock?.pid) || alive(info?.pid)) return { state: 'unconfirmed', home, ...evidence() };
+  return { state: info || lock ? 'stale' : 'stopped', home, ...(info || lock ? evidence() : {}) };
 }
 
 export async function startBackground(cli, args, home) {
   const previous = await serviceState(home);
   if (previous.state === 'running') return { ...previous, alreadyRunning: true };
   if (previous.state !== 'stopped') throw new Error(previous.state === 'stale'
-    ? `Service process has exited, but runtime markers remain in ${home}. Check old workers before removing server.lock/server.json; keep project.sqlite and history. No second service was started.`
+    ? `Service process has exited, but runtime markers remain in ${home}. Run threshold service status with the same --home for recorded PIDs and marker paths. Check old workers before removing only server.lock/server.json; keep project.sqlite and history. No second service was started.`
     : `Service state is unconfirmed in ${home}. Inspect the existing process before restarting. No second service was started.`);
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [cli, 'serve', ...args], { detached: true, windowsHide: true,

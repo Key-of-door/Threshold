@@ -21,7 +21,7 @@ test('restart UNKNOWN retains occupancy until explicit client recovery, without 
   const old = store.startRun(task.id, 'fixture', 'fixture', 'Old work', undefined, repo);
   store.running(old.id, 'old-session');
   // Persist exactly the pre-release v5 layout, exercising the additive migration on restart.
-  store.db.exec('ALTER TABLE runs DROP COLUMN model_settings_json; ALTER TABLE runs DROP COLUMN workspace_recovery_json; ALTER TABLE projects DROP COLUMN archived_at; PRAGMA user_version=5;');
+  store.db.exec('ALTER TABLE runs DROP COLUMN execution_json; ALTER TABLE runs DROP COLUMN model_settings_json; ALTER TABLE runs DROP COLUMN workspace_recovery_json; ALTER TABLE projects DROP COLUMN archived_at; PRAGMA user_version=5;');
   store.close();
   let starts = 0, stops = 0;
   const workerFactory = () => {
@@ -46,6 +46,10 @@ test('restart UNKNOWN retains occupancy until explicit client recovery, without 
     assert.equal(unknown.status, 'unknown'); assert.equal(unknown.workspace_recovery, null);
     assert.equal(unknown.session_id, 'old-session'); assert.equal(unknown.exit_code, null); assert.equal(unknown.ended_at, null);
     assert.match(unknown.error, /without a process exit observation/);
+    const index = (await call('/status')).body;
+    assert.equal(index.unresolvedRuns[0].id, old.id);
+    assert.match(display(index), /Unresolved Runs/);
+    assert.ok(display(unknown).includes(`threshold run recover ${old.id.slice(0, 8)}`));
     assert.equal((await call(`${runPath}/stop`, {})).body.status, 'unknown');
     assert.equal(stops, 0);
     assert.equal((await launch()).status, 409);
@@ -59,10 +63,9 @@ test('restart UNKNOWN retains occupancy until explicit client recovery, without 
     assert.equal((await call(`${runPath}/recover`, { confirmReusable: true })).status, 400);
     await assert.rejects(command(['run', 'recover', old.id, '--note', note]), error => /No recovery requested/.test(error.stderr));
     await assert.rejects(command(['run', 'recover', '--confirm-reusable', '--note', note]), error => /Missing --run/.test(error.stderr));
-    await assert.rejects(command(['run', 'recover', old.id.slice(0, 8), '--confirm-reusable', '--note', note]), error => /full Run ID/.test(error.stderr));
     assert.equal((await launch()).status, 409); assert.equal(starts, 0);
 
-    const recovered = JSON.parse((await command(['run', 'recover', old.id, '--confirm-reusable', '--note', note])).stdout);
+    const recovered = JSON.parse((await command(['run', 'recover', old.id.slice(0, 8), '--confirm-reusable', '--note', note])).stdout);
     assert.equal(recovered.workspace_recovery.source, 'client'); assert.equal(recovered.workspace_recovery.note, note);
     assert.ok(Number.isFinite(Date.parse(recovered.workspace_recovery.confirmedAt)));
     assert.deepEqual({ ...recovered, workspace_recovery: null }, unknown);
@@ -92,5 +95,29 @@ test('restart UNKNOWN retains occupancy until explicit client recovery, without 
     assert.equal((await call(boardPath)).body.resources.unsettled, 0);
     assert.deepEqual((await call(runPath)).body, recovered);
     assert.equal((await call(`/tasks/${task.id}`)).body.recentRuns.find(run => run.id === old.id).status, 'unknown');
+  } finally { await service.close(); }
+});
+
+test('ambiguous recovery prefixes do not release any Run; Project scope resolves the intended Run', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'threshold-recovery-prefix-'));
+  let store = openStore(join(home, 'project.sqlite'));
+  const projects = [];
+  for (let i = 1; i <= 2; i++) {
+    const project = store.createProject(`Project ${i}`, `/fixture-${i}`); projects.push(project);
+    const task = store.createTask(project.id, 'Task', 'Inspect');
+    const run = store.startRun(task.id, 'fixture', 'fixture');
+    store.db.prepare('UPDATE runs SET id=? WHERE id=?').run(`aaaaaaaa-0000-4000-8000-00000000000${i}`, run.id);
+  }
+  store.close();
+  const service = await startService({ home, agentDir: home, port: 0 });
+  const command = args => exec(process.execPath, [cli, ...args, '--home', home, '--json'], { windowsHide: true });
+  try {
+    await assert.rejects(command(['run', 'recover', 'aaaaaaaa', '--confirm-reusable', '--note', 'Checked']), e => /Ambiguous run/.test(e.stderr));
+    const index = JSON.parse((await command(['status', '--all'])).stdout);
+    assert.equal(index.unresolvedRuns.length, 2);
+    const recovered = JSON.parse((await command(['run', 'recover', 'aaaaaaaa', '--project', projects[1].id, '--confirm-reusable', '--note', 'Checked second workspace'])).stdout);
+    assert.equal(recovered.id, 'aaaaaaaa-0000-4000-8000-000000000002');
+    assert.equal(recovered.status, 'unknown');
+    assert.equal(JSON.parse((await command(['status', '--all'])).stdout).unresolvedRuns.length, 1);
   } finally { await service.close(); }
 });

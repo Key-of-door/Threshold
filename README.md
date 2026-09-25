@@ -26,6 +26,10 @@ a fresh coordinating Run reads Project state and Git, then reviews and integrate
 Select a reviewer, compose GitHub read with it, then start a Run with no optional capabilities.
 Messages carry findings between independent workers; the next worker checks them against the actual code.
 
+A Run can also address another Task's inbox in the same Project.
+The source Run stays attached to the finding; the target Task's status does not change automatically.
+See [peer findings across Tasks](docs/user-guide.md#peer-findings-across-tasks).
+
 ![Run-local capability selection, a shared review finding, and independent verification by a fresh worker](docs/media/run-capabilities.gif)
 
 </details>
@@ -36,6 +40,9 @@ Capability selection is shown separately from observed tool use. [Start here](#i
 ## Install
 
 You need **Node 24.18+**, npm, Git, and a provider account/API key (or an existing Pi login).
+On **Windows, use Node 24 LTS at 24.20.0 or newer** (validated with 24.21.0):
+24.18/24.19 can crash when Pi exits immediately after a tool call.
+See [runtime validation](docs/runtime-validation.md) for the upstream fix and test evidence.
 Windows workers need Git for Windows Bash; WSL2 workers use Linux Bash.
 Pi is pinned to **0.85.1** and installed as a dependency.
 
@@ -58,7 +65,7 @@ threshold --version
 threshold --help
 ```
 
-This release is **0.2.0-alpha.3**. To pin it, use `threshold-lite@0.2.0-alpha.3` instead of `threshold-lite@alpha`.
+This release is **0.2.0-alpha.5**. To pin it, use `threshold-lite@0.2.0-alpha.5` instead of `threshold-lite@alpha`.
 For a user-writable installation directory, use `npm install -g --prefix PATH threshold-lite@alpha`
 and put `PATH` (Windows) or `PATH/bin` (Linux/macOS) on your shell's PATH.
 
@@ -70,7 +77,7 @@ From a source checkout:
 ```sh
 npm ci
 npm pack
-npm install -g ./threshold-lite-0.2.0-alpha.3.tgz
+npm install -g ./threshold-lite-0.2.0-alpha.5.tgz
 ```
 
 If you already have a `.tgz` package, use `npm install -g PATH_TO_PACKAGE.tgz`.
@@ -172,7 +179,9 @@ waits after each reply until you explicitly `threshold run stop RUN_ID`. Attachi
 background Run does not change its lifetime. Conversation is temporary; checkpoint, Message and Git
 remain the handoff path. See [interactive Runs](docs/user-guide.md#interactive-runs).
 
-Background Runs have a **3-minute** turn limit; interactive Runs have no fixed conversation lifetime.
+Background Runs default to a **30-minute** turn deadline. Set `--turn-timeout SECONDS` on a new background Run; `0` disables the deadline. It covers the initial autonomous model/tool loop and does not add a finalization turn.
+Interactive Runs have no fixed conversation lifetime and reject `--turn-timeout`.
+Run detail records the execution policy; a deadline does not guarantee a checkpoint was saved.
 Default service limits are **3 unsettled Runs** and
 **100 historical starts per data directory**. These are startup limits, not token or spending budgets.
 An interactive worker waiting for input still occupies its slot and worktree.
@@ -219,8 +228,8 @@ threshold service start
 ```
 
 Use your existing `--home` and `--agent-dir` overrides if applicable. Project history is retained.
-Version `0.2.0-alpha.3` adds schema **v7** for Project archives. Existing Projects remain active.
-Older services refuse a v7 database; downgrading requires the pre-upgrade backup.
+Alpha.5 upgrades schema **v8** to **v9** for Run execution settings and stop reasons. Existing history remains intact; old execution settings remain unrecorded.
+Older services refuse a newer database; downgrading requires the pre-upgrade backup.
 A running service does not update just because npm installed a newer CLI.
 See [troubleshooting](docs/user-guide.md#technical-errors-and-stopping) before deleting
 any runtime marker or retrying a failed startup.
@@ -232,7 +241,7 @@ any runtime marker or retrying a failed startup.
 - Terminal output uses restrained color and a small face only on top-level help/startup/attach.
   Use `--no-color` or `NO_COLOR` for monochrome, and `--ascii` for simple symbols. Pipes and
   `TERM=dumb` use plain output automatically; no special fonts are needed.
-- Use `--instructions-file PATH` or `--body-file PATH` for long Task/message text.
+- Use `--instructions-file PATH` or `--body-file PATH` for long Task/message text, especially text containing quotes in Windows PowerShell 5.1.
 - [User guide](docs/user-guide.md): configuration, messages, worktrees, capabilities, technical errors and current limits.
 - [Changes from the prototype CLI](docs/cli-migration.md): new home, output and stop commands.
 - [Optional Threshold-capability cookbook](https://github.com/Key-of-door/Threshold-capability): select skill/extension paths per Run; nothing is installed or activated automatically.

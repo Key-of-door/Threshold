@@ -2,6 +2,13 @@
 
 Use `threshold --help` for the command list and `threshold run --help` for a specific command.
 
+On Windows, use **Node 24 LTS, version 24.20.0 or newer**; 24.21.0 was validated with
+immediate model-fixture replies and the full test suite. Older Windows Node 24.18/24.19
+can abort during Pi teardown after a completed tool call. This is not Task failure or a
+reason to retry a write blindly. Check persisted state and the Run exit record.
+See [runtime validation](runtime-validation.md). Upgrade/restart the service itself:
+managed Pi workers use the Node executable that launched that service.
+
 ## WSL2
 
 Ubuntu 24.04 x64 on WSL2 was tested with Node 24.18.0, Threshold 0.2.0-alpha.3 and Pi 0.85.1.
@@ -195,6 +202,16 @@ threshold run --task ID --provider openai-codex --model gpt-5.5 --thinking high 
 Without flags, existing behavior remains: Threshold asks Pi for `low` thinking (Pi may map this to `off` for a non-reasoning model), and Pi supplies its configured context/output defaults.
 Conflicting thinking/output fields in Pi `samplingParams` must be removed before selecting the corresponding flag; they must not silently override the Run's request.
 If a model catalog entry understates a capacity supported by your provider, correct that model's Pi `models.json` entry first; these flags never bypass that declaration.
+Capacity errors show model, requested value, local ceiling and the service's configuration file path.
+This is a local validation failure, not an HTTP rejection from the provider.
+
+`threshold setup` displays existing capacity declarations without changing them. For a model absent from
+Pi's local catalog it asks you to confirm context/output capacities against provider documentation.
+The official DeepSeek Flash example declares 1,000,000 context / 384,000 output tokens according to the
+[DeepSeek specification](https://api-docs.deepseek.com/quick_start/pricing/). Those values are not silently
+assigned to arbitrary models or third-party endpoints. Existing 128K/4096 declarations are retained until
+you explicitly correct them. These capacities also supply Pi defaults when Run flags are omitted;
+use `--max-output-tokens` for a lower per-response limit when desired.
 
 `threshold status --run ID` and `--json` expose `modelSettings.requested` and `modelSettings.effective`.
 Effective values are observed from Pi **at startup before the first model turn**, not measurements of every later request or a guarantee of provider enforcement.
@@ -204,6 +221,32 @@ Extensions may later change models or settings; the startup record is not a cont
 
 Known model/configuration errors reject creation before allocating a Run. Extension-defined models are resolved inside Pi;
 if their settings cannot be applied and verified, the created Run ends with an explicit error before its first model turn.
+
+## Background execution deadline
+
+A new background Run defaults to **1800 seconds (30 minutes)** for its initial autonomous turn:
+
+```sh
+threshold run --task ID --provider PROVIDER --model MODEL --turn-timeout 3600
+threshold run --task ID --provider PROVIDER --model MODEL --turn-timeout 0
+```
+
+The clock starts with the initial prompt, after runtime/model/capability startup. It includes model requests,
+retries and tool loops until Pi reports settled; it is not a per-response timeout or a token budget.
+`0` means no turn deadline. Integers up to 2147483 seconds are accepted. Provider, RPC, tool and OS limits still apply.
+The flag only applies to new background Runs, not `--attach` or `run attach`.
+The service API and peer launch route accept `turnTimeoutSeconds`; omission uses the same default and
+never inherits a caller's override. Board resources expose `defaultTurnTimeoutSeconds`.
+
+Run creation/detail, Board and attach show the selected policy. Run JSON persists
+`execution: { mode, turnTimeoutSeconds, stopReason? }`. Interactive Runs use a null timeout;
+historical Runs have `execution: null` rather than guessed limits. Schema v9 adds this nullable Run metadata.
+`stopReason` records timeout, client stop or service stop; an `_idle` suffix means the service observed
+an interactive Run waiting with no pending/queued input at the stop request.
+
+On timeout Threshold stops Pi, preserves the deadline reason through abort cleanup, and releases its
+Run occupancy after the exit observation. It does not synthesize a checkpoint, undo file changes or
+start a finalization turn. Inspect Project/Git before continuing in a new Run.
 
 ## Interactive Runs
 
@@ -232,8 +275,8 @@ provider, context and operating-system limits still apply. No idle auto-stop is 
 The view shows completed public replies, compact tool starts/results and client input. It does not stream
 private reasoning or expose the raw Pi conversation. Public activity is limited to 256 events / 256 KiB
 per held Run; long replies are previewed up to 12,000 characters. Eviction is explicitly reported. The service
-retains at most 64 jobs after completed-job eviction, in addition to any active jobs. Activity and startup
-policy are runtime-only observations, unavailable after service restart; neither is restored into future Runs.
+retains at most 64 jobs after completed-job eviction, in addition to any active jobs. Live activity is runtime-only and unavailable after service restart. New Runs persist their startup
+execution policy for inspection, but no conversation or prior capability selection is restored into future Runs.
 Use a checkpoint or Message for something that should survive. A fresh Run receives neither this buffer nor
 its predecessor's conversation. Talking about deployment does not issue a Human Decision.
 
@@ -320,6 +363,38 @@ Messages are scoped to the Task, not a named recipient. There is no automatic no
 Checkpoint describes the work's stopping point; Message carries a particular request/finding/reply.
 Task status is an attributed work assessment, not proof of correctness or Human approval.
 
+### Peer findings across Tasks
+
+A Run can address another Task in the same Project using the existing `send_message` tool:
+
+```js
+send_message({
+  taskId: "FULL_TARGET_TASK_ID_FROM_PROJECT_BOARD",
+  body: "I think the delivery needs changes: the path-handling test fails. See tests/path.test.mjs. Please recheck."
+})
+```
+
+Omit `taskId` to keep the message in the Run's own Task inbox. Use `read_project_board`
+to find the target's full ID. The destination inbox stores the message once; it is not copied
+to the sender's inbox or broadcast to all Tasks. The service records the actual sending Run,
+and the message remains available after that Run ends or the service restarts.
+
+The target's next Run can discover the inbox through `read_task`, then page through it with
+`read_messages`. Other same-Project Runs can read it through `read_project_board({taskId, after})`.
+Readability does not guarantee that a worker has read or acted on it. There is no automatic
+notification or worker launch, and this is not private mail or an OS security boundary.
+
+A peer finding is ordinary message text, not a separate assessment type, approval or status
+transition. Evidence references are not automatically verified. Corrections append new messages;
+contradictory claims remain in history. The target Task's status stays unchanged until a Run bound
+to that Task, or the local CLI client, explicitly updates it. Cross-Task claims do not grant
+cross-Task status-write authority, and this mechanism does not guarantee status convergence.
+
+The CLI's existing `message send --task ID` addresses the selected Task as a local client.
+Run-originated writes use the authenticated Run identity; callers cannot choose another sender.
+If a write response is lost, inspect the destination inbox before retrying: another send appends
+another message. No new entity, schema migration or message enum is introduced by this increment.
+
 ## Optional capabilities and worktrees
 
 ```sh
@@ -367,7 +442,9 @@ precedence over the installed npm command. Open a fresh terminal, or remove only
   Do not change ports to start a second service against a home whose old process is still alive.
 - Run limit: inspect Board. `--max-runs` counts all historical starts in this home, including failed starts;
   `--max-parallel-runs` includes unknown exits until explicit workspace recovery. Configure deliberately; don't delete history to replenish quota.
-- Stale lock / unknown exit: inspect the recorded process and workspace before intervention. Remove stale
+- Stale lock / unknown exit: `threshold service status` shows recorded PIDs and exact marker paths.
+  A present PID is not proof of process identity; an absent PID does not establish that descendants exited.
+  Inspect the old service, workers and workspace before intervention. Remove stale
   `server.lock` / `server.json` only after checking the old service and workers are gone. Never remove
   `project.sqlite`, its WAL/SHM files, `human.key`, or project history as a startup fix. Removing markers does not recover a Run
   or establish external effects. After restarting, use the explicit recovery path below for stale occupancy.
@@ -385,7 +462,9 @@ Use the returned PID to inspect the process and its command line. Do not delete 
 kill every Node process, or infer that a missing address means all workers are gone. Recover the intended
 instance only after matching the process to its home; there is no automatic orphan-service adoption.
 
-`run stop ID` interrupts one worker. `service stop` requests shutdown of this service and all managed workers.
+`run stop ID` stops one worker. `service stop` requests shutdown of this service and all managed workers.
+Stopping an interactive Run observed idle, without pending or queued input, is a neutral end if Pi exits cleanly.
+Stopping working/starting Runs remains an interruption. Prior model errors and abnormal process exits stay errors.
 An exit observation is not proof of arbitrary child-process cleanup or absent external effects.
 Interrupted/failed Runs keep their error; a successful stop request doesn't turn the Task into done.
 
@@ -398,11 +477,12 @@ workspace and any relevant external effects. Only when you have confirmed the wo
 
 ```sh
 threshold status --run ID
-threshold run recover FULL_RUN_ID --confirm-reusable --note "Checked old worker is gone and workspace is reusable"
+threshold run recover ID --confirm-reusable --note "Checked old worker is gone and workspace is reusable"
 ```
 
-Copy the full Run ID from Run detail; recovery deliberately rejects prefixes. Both the confirmation
-flag and a nonempty note are required. This records `workspace_recovery` with `source: client`, a server
+Recovery accepts a unique short prefix and prints the resolved full ID (JSON returns it in the Run).
+Use `--project ID` to scope an ambiguous lookup. `threshold status --all` lists unresolved Runs across Projects;
+Run detail provides a recovery command. Both the confirmation flag and a nonempty note are required. This records `workspace_recovery` with `source: client`, a server
 timestamp and your note, and releases only that old Run's occupancy. Its `status` remains `unknown`;
 session ID, error, exit code and end time are unchanged. It does not establish absent external effects,
 restore the old conversation, change Task status or replenish the historical-start budget. Repeating the

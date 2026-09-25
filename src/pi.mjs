@@ -58,13 +58,13 @@ export function startPi({ cwd, agentDir, provider, model, env, modelSettings = {
   let stopping;
   return {
     pid: child.pid, request, closed: done,
-    async turn(message, timeout = 180000) {
+    async turn(message, timeout = 0) {
       const cursor = sequence;
       let clean;
       const ended = new Promise((resolve, reject) => {
         const onEvent = (event, seq) => { if (seq > cursor && event.type === 'agent_settled') { clean(); resolve(event); } };
         const onFail = error => { clean(); reject(error); };
-        const timer = timeout > 0 ? setTimeout(() => onFail(Object.assign(new Error('Pi turn timed out'), { code: 'THRESHOLD_TURN_TIMEOUT' })), timeout) : undefined;
+        const timer = timeout > 0 ? setTimeout(() => onFail(Object.assign(new Error('Pi turn timed out'), { code: 'THRESHOLD_TURN_TIMEOUT', timeoutMs: timeout })), timeout) : undefined;
         clean = () => { clearTimeout(timer); bus.off('event', onEvent); bus.off('failed', onFail); };
         bus.on('event', onEvent); bus.on('failed', onFail);
       });

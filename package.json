@@ -1,6 +1,6 @@
 {
   "name": "threshold-lite",
-  "version": "0.2.0-alpha.4",
+  "version": "0.2.0-alpha.5",
   "description": "A small local project service for persistent collaboration across independent Pi agent sessions.",
   "license": "Apache-2.0",
   "repository": {
@@ -31,6 +31,7 @@
     "README.md",
     "docs/user-guide.md",
     "docs/cli-migration.md",
+    "docs/runtime-validation.md",
     "examples/pi/"
   ],
   "scripts": {
