@@ -9,6 +9,16 @@ You do not need to copy the previous conversation.
 Early alpha: one machine, trusted local user. Pi runs the Agent; Git holds the code; SQLite holds project state.
 Optional capabilities are not required for the first workflow.
 
+Use the CLI, or choose **Threshold TUI v0.1** after starting the service:
+
+```sh
+threshold service start
+threshold tui
+```
+
+The TUI is an optional interface to the same Projects, Tasks and Runs. CLI commands remain available;
+opening or leaving the TUI does not start or stop workers. [TUI guide](docs/tui.md).
+
 [Report a problem or friction](https://github.com/Key-of-door/Threshold/issues/new/choose) ·
 [Questions, experiments and community](https://github.com/Key-of-door/Threshold-capability/discussions) ·
 English / 中文 welcome.
@@ -65,7 +75,7 @@ threshold --version
 threshold --help
 ```
 
-This release is **0.2.0-alpha.5**. To pin it, use `threshold-lite@0.2.0-alpha.5` instead of `threshold-lite@alpha`.
+This release is **0.2.0-alpha.6**, including **Threshold TUI v0.1**. To pin it, use `threshold-lite@0.2.0-alpha.6` instead of `threshold-lite@alpha`.
 For a user-writable installation directory, use `npm install -g --prefix PATH threshold-lite@alpha`
 and put `PATH` (Windows) or `PATH/bin` (Linux/macOS) on your shell's PATH.
 
@@ -77,7 +87,7 @@ From a source checkout:
 ```sh
 npm ci
 npm pack
-npm install -g ./threshold-lite-0.2.0-alpha.5.tgz
+npm install -g ./threshold-lite-0.2.0-alpha.6.tgz
 ```
 
 If you already have a `.tgz` package, use `npm install -g PATH_TO_PACKAGE.tgz`.
@@ -103,6 +113,9 @@ Start the service in the background; this returns to the same terminal:
 ```sh
 threshold service start
 ```
+
+At this point, optionally run `threshold tui` to select/register a Project, create a Task and start a Run
+in the terminal interface. Or continue with the CLI steps below. Both use the same service and history.
 
 Create a folder yourself, or choose an existing project folder. Then register it:
 
@@ -221,14 +234,15 @@ then update the package and restart:
 
 ```sh
 threshold service stop
-# Back up the closed service home before the schema v7 upgrade.
+# Back up the closed service home before upgrading.
 npm install -g threshold-lite@alpha
 threshold --version
 threshold service start
 ```
 
 Use your existing `--home` and `--agent-dir` overrides if applicable. Project history is retained.
-Alpha.5 upgrades schema **v8** to **v9** for Run execution settings and stop reasons. Existing history remains intact; old execution settings remain unrecorded.
+Alpha.6 adds the optional TUI without a schema or Run execution-policy change; upgrading from alpha.5 keeps schema **v9**.
+If upgrading from an older version, alpha.5 introduced schema **v9** for Run execution settings and stop reasons. Existing history remains intact; old execution settings remain unrecorded.
 Older services refuse a newer database; downgrading requires the pre-upgrade backup.
 A running service does not update just because npm installed a newer CLI.
 See [troubleshooting](docs/user-guide.md#technical-errors-and-stopping) before deleting

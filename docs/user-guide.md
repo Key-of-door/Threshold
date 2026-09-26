@@ -2,6 +2,10 @@
 
 Use `threshold --help` for the command list and `threshold run --help` for a specific command.
 
+Threshold TUI v0.1 is an optional interface alongside the CLI. After `threshold service start`, run
+`threshold tui` to enter it. Both interfaces use the same service/home and Project history; you can keep
+using CLI commands. See the [TUI guide](tui.md) for input targets, keyboard/mouse behavior and current limits.
+
 On Windows, use **Node 24 LTS, version 24.20.0 or newer**; 24.21.0 was validated with
 immediate model-fixture replies and the full test suite. Older Windows Node 24.18/24.19
 can abort during Pi teardown after a completed tool call. This is not Task failure or a

@@ -1,6 +1,6 @@
 {
   "name": "threshold-lite",
-  "version": "0.2.0-alpha.5",
+  "version": "0.2.0-alpha.6",
   "description": "A small local project service for persistent collaboration across independent Pi agent sessions.",
   "license": "Apache-2.0",
   "repository": {
@@ -32,6 +32,10 @@
     "docs/user-guide.md",
     "docs/cli-migration.md",
     "docs/runtime-validation.md",
+    "docs/tui.md",
+    "docs/tui-dogfood.md",
+    "docs/design/tui-interaction-v1.md",
+    "docs/design/tui-visual-round1.md",
     "examples/pi/"
   ],
   "scripts": {
@@ -41,6 +45,7 @@
   },
   "dependencies": {
     "@earendil-works/pi-coding-agent": "0.85.1",
+    "@earendil-works/pi-tui": "0.85.1",
     "string-width": "8.2.2"
   }
 }

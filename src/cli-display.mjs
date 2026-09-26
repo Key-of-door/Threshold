@@ -11,6 +11,7 @@ export function defaultHome(platform = process.platform, env = process.env, user
 }
 
 const commands = {
+  tui: ['[--project ID | --task ID | --run ID] [--no-mouse]', 'Open Threshold TUI v0.1, an optional interface alongside the CLI. Run threshold service start, then threshold tui. Uses the same service/home; opening or leaving the view never starts or stops a Run. Mouse and keyboard navigation, Task inbox, Run input and startup configuration. Public activity is bounded and temporary; no token streaming or complete tool results. Requires an interactive VT terminal.', 'threshold tui'],
   setup: ['[--agent-dir PATH]', 'Configure a provider/model and a hidden API key in Pi local configuration. Terminal only. Existing settings and other providers are preserved; no model call is made. Stored credentials are local plaintext, not Project data.', 'threshold setup'],
   'service start': ['[--agent-dir PATH] [--port 8765] [--max-parallel-runs 3] [--max-runs 100]', 'Start the local service in the background and return to this terminal. An already running service is reused without changing its options. No login/autostart is installed. Use serve for foreground diagnostics.', 'threshold service start'],
   'service status': ['', 'Inspect service availability without changing it. Distinguishes running, stopped, stale markers, and unconfirmed state. Does not establish old worker exit.', 'threshold service status'],
@@ -34,7 +35,7 @@ const commands = {
 export const commandNames = Object.keys(commands);
 const groups = [
   ['Start here', [['setup', 'Configure a model and API key'], ['service start', 'Start service in the background'], ['project create', 'Choose a project folder'], ['task create', 'Give the project a task'], ['run --attach', 'Choose a task and start chatting'], ['status', 'See where the work stands']]],
-  ['Work together', [['run attach ID', 'See and talk to a live worker'], ['task update', 'Record a work assessment'], ['message read / send', 'Exchange project notes'], ['board', 'See tasks and runs together']]],
+  ['Work together', [['tui', 'Open the optional terminal UI'], ['run attach ID', 'See and talk to a live worker'], ['task update', 'Record a work assessment'], ['message read / send', 'Exchange project notes'], ['board', 'See tasks and runs together']]],
   ['Stop something', [['run stop ID', 'One worker'], ['service stop', 'Service and managed workers']]],
   ['When needed', [['project archive/restore', 'Put away or return to a project'], ['service status', 'Inspect service availability'], ['serve', 'Foreground service / diagnostics'], ['run recover ID', 'Release manually checked stale occupancy'], ['decision', 'Human decision for fake_deploy'], ['--json', 'Machine-readable output'], ['--home PATH', 'Choose another data directory'], ['--version', 'Show the installed version']]],
 ];

@@ -25,7 +25,7 @@ async function main() {
     ({ values: args, positionals: commands } = parseArgs({ allowPositionals: true, options: {
       ...Object.fromEntries(['home', 'agent-dir', 'port', 'name', 'repo', 'project', 'title', 'instructions', 'instructions-file', 'task', 'provider', 'model', 'run', 'target', 'value', 'objective', 'status', 'note', 'body', 'body-file', 'after', 'limit', 'workspace', 'max-parallel-runs', 'max-runs', 'thinking', 'context-window', 'max-output-tokens', 'turn-timeout'].map(key => [key, { type: 'string' }])),
       skill: { type: 'string', multiple: true }, extension: { type: 'string', multiple: true },
-      ...Object.fromEntries(['summary', 'json', 'all', 'include-archived', 'help', 'version', 'ascii', 'no-color', 'attach', 'confirm-reusable', 'init-git'].map(key => [key, { type: 'boolean' }])) } }));
+      ...Object.fromEntries(['summary', 'json', 'all', 'include-archived', 'help', 'version', 'ascii', 'no-color', 'no-mouse', 'attach', 'confirm-reusable', 'init-git'].map(key => [key, { type: 'boolean' }])) } }));
   } catch (error) { report(`${error.message}\nRun threshold --help.`); return 1; }
   if (args.version) { console.log(`threshold ${JSON.parse(readFileSync(new URL('../package.json', import.meta.url))).version}`); return 0; }
   const runPosition = commands[0] === 'run' && ['stop', 'attach', 'recover'].includes(commands[1]) && commands.length === 3 ? commands.pop() : undefined;
@@ -154,7 +154,10 @@ async function main() {
       if (args.json) print(value);
       else console.log(display(value, { ...presentation, interactions }));
     };
-    if (command === 'setup') {
+    if (command === 'tui') {
+      const { startTui } = await import('./tui.mjs');
+      await startTui({ home, args, options: presentation });
+    } else if (command === 'setup') {
       if (!interactive) throw new Error('threshold setup requires an interactive terminal; it never reads API keys from flags or pipes. Existing Pi configuration and environment variables remain supported.');
       const { setupModels } = await import('./pi-config.mjs');
       await setupModels(agentDir(), ui());
