@@ -56,14 +56,22 @@ See [runtime validation](docs/runtime-validation.md) for the upstream fix and te
 Windows workers need Git for Windows Bash; WSL2 workers use Linux Bash.
 Pi is pinned to **0.85.1** and installed as a dependency.
 
-| Environment | Validation status for 0.2.0-alpha.3 |
+| Environment | Validation status for 0.2.0-alpha.6 |
 | --- | --- |
-| Windows x64 + Git for Windows Bash | Tested: installation, CLI, service and Pi workflows |
-| Ubuntu 24.04 x64 on WSL2 | Tested: fresh npm installation, native Linux Node/Bash, interactive attach/detach, restart handoff and Project archive/restore |
-| Native Linux, other WSL distributions, macOS | Not yet tested |
+| Debian 13.6 x64 Linux (cloud container), Node 24.19.0 | Tested on alpha.6: fresh npm installation, 82/82 source tests, CLI/service lifecycle, real Pi processes, interactive attach/detach, restart persistence, Project archive/restore and TUI PTY workflows |
+| Windows x64 + Git for Windows Bash | Historical alpha.3 validation: installation, CLI, service and Pi workflows; not revalidated in this Linux check |
+| Ubuntu 24.04 x64 on WSL2 | Historical alpha.3 validation: fresh npm installation, native Linux Node/Bash, interactive attach/detach, restart handoff and Project archive/restore; alpha.6 revalidation pending |
+| Other Linux/WSL distributions, macOS | Not yet tested |
 
-The WSL2 check used real Pi processes and a local deterministic model fixture; it did not
-verify a live external model provider.
+The alpha.6 Linux check (2026-09-30; kernel 6.18.44, npm 11.9.0, Pi 0.85.1) used
+the published npm package and source tag `v0.2.0-alpha.6` (`eab7064`).
+TUI checks used a real PTY at 120×36 and 40×20: keyboard/mouse-protocol navigation,
+CJK multiline paste, draft cancellation/resume, explicit inbox and Run input, repeated-submit
+suppression, Inspect scrolling, resizing, and Quit/Ctrl+C without stopping the worker.
+This does not validate a physical terminal's IME, clipboard or font behavior.
+
+The Linux and historical WSL2 checks used real Pi processes and local deterministic model
+fixtures; neither verified a live external model provider.
 In WSL, install Node and Threshold **inside Linux**, and use Linux paths for your project,
 data and Pi configuration. [WSL setup notes](docs/user-guide.md#wsl2).
 
