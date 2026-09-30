@@ -72,16 +72,34 @@ test('setup confirms unknown capacities and preserves existing declarations inst
   assert.equal(existsSync(join(badDir, 'models.json')), false);
 });
 
-test('official Flash setup confirms the documented example capacities and permits the reported large Run settings', async () => {
-  const dir = temp(), output = sink(), seen = [];
+test('built-in Flash setup uses the Pi catalog without asking for or writing a custom model', async () => {
+  const dir = temp(), output = sink();
   write(join(dir, 'settings.json'), { shellPath: process.execPath });
-  const values = ['deepseek', 'deepseek-flash', 'https://api.deepseek.com', undefined, undefined, 'local-only-key'];
-  await setupModels(dir, { async ask(label, options) { seen.push({ label, fallback: options?.fallback }); return values.shift() ?? options.fallback; }, async choose() { return 'openai-completions'; } }, output);
-  const entry = json(join(dir, 'models.json')).providers.deepseek.models[0];
-  assert.equal(entry.contextWindow, 1000000); assert.equal(entry.maxTokens, 384000);
-  assert.ok(seen.some(item => item.label === 'Model context capacity (tokens)' && item.fallback === '1000000'));
-  const { validateModelSettings } = await import('../src/run-settings.mjs');
+  const values = ['deepseek', 'deepseek-flash', 'local-only-key'];
+  await setupModels(dir, answers(values), output);
+  assert.equal(values.length, 0);
+  assert.equal(existsSync(join(dir, 'models.json')), false);
   const runtime = await modelRuntime(dir, ['deepseek']);
+  assert.equal((await runtime.getAuth('deepseek')).auth.apiKey, 'local-only-key');
+  assert.match(output.text, /contextWindow=1000000, maxTokens=384000/);
+  assert.doesNotMatch(output.text, /local-only-key/);
+  const { validateModelSettings } = await import('../src/run-settings.mjs');
+  assert.doesNotThrow(() => validateModelSettings(runtime.getModel('deepseek', 'deepseek-flash'), { thinking: 'max', contextWindow: 512000, maxOutputTokens: 300000 }));
+});
+
+test('existing Flash example declarations and stored credentials survive setup with the newer Pi catalog', async () => {
+  const dir = temp(), output = sink();
+  write(join(dir, 'settings.json'), { shellPath: process.execPath });
+  const config = json(new URL('../examples/pi/models.json', import.meta.url));
+  delete config.providers.deepseek.apiKey;
+  write(join(dir, 'models.json'), config);
+  write(join(dir, 'auth.json'), { deepseek: { type: 'api_key', key: 'existing-local-key' } });
+  const authBefore = readFileSync(join(dir, 'auth.json'), 'utf8');
+  await setupModels(dir, answers(['deepseek', 'deepseek-flash', '']), output);
+  assert.deepEqual(json(join(dir, 'models.json')), config);
+  assert.equal(readFileSync(join(dir, 'auth.json'), 'utf8'), authBefore);
+  const runtime = await modelRuntime(dir, ['deepseek']);
+  const { validateModelSettings } = await import('../src/run-settings.mjs');
   assert.doesNotThrow(() => validateModelSettings(runtime.getModel('deepseek', 'deepseek-flash'), { thinking: 'max', contextWindow: 512000, maxOutputTokens: 300000 }));
 });
 

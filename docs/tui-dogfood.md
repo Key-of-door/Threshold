@@ -2,7 +2,8 @@
 
 Development record, 2026-09-26. The resulting **Threshold TUI v0.1** ships in `threshold-lite@0.2.0-alpha.6`;
 see the [installed TUI guide](tui.md). The local commands below describe the original source dogfood workflow.
-The implementation uses the pinned `@earendil-works/pi-tui@0.85.1` terminal renderer and existing Threshold service APIs.
+The original implementation used `@earendil-works/pi-tui@0.85.1` and existing Threshold service APIs.
+The alpha.7 maintenance release pins 0.99.1; see [upgrade validation](release-alpha7.md).
 There are no schema, Run execution-policy or public-activity API changes.
 
 ## Start

@@ -130,7 +130,7 @@ request payloads are never copied into project history.
 
 ### Manual / existing Pi setup
 
-Threshold uses Pi 0.85.1 configuration without owning model routing or login. If Pi already works with
+Threshold uses Pi 0.99.1 configuration without owning model routing or login. If Pi already works with
 your provider, use the same agent directory. The service defaults to `~/.pi/agent`; `--agent-dir PATH`
 selects another directory. Service restarts must select it again. No author-specific configuration is required.
 
@@ -150,7 +150,10 @@ On Windows put this in that Pi directory's `settings.json` (adjust the executabl
 Then start `threshold service start --agent-dir YOUR_PI_CONFIG` and use `--provider deepseek --model deepseek-flash`
 on a Run. Model calls are billable according to your provider. The example's context/output settings
 are conservative local settings, not claims about maximum provider capabilities.
-Other providers use Pi's native setup; see [Pi configuration](https://github.com/earendil-works/pi/tree/v0.85.1/packages/coding-agent).
+Other providers use Pi's native setup; see [Pi configuration](https://github.com/earendil-works/pi/tree/v0.99.1/packages/coding-agent).
+The bundled catalog now includes `deepseek-flash`; setup uses that entry without requiring a custom
+`models.json`. Existing custom declarations and stored credentials remain supported.
+New upstream built-in extensions (including MCP and codemode) are not automatically enabled in Threshold Runs.
 
 ## Data and project selection
 

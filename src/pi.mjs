@@ -4,7 +4,8 @@ import { fileURLToPath } from 'node:url';
 
 // A Pi process client, not a cross-runtime abstraction. No project state lives here.
 export function startPi({ cwd, agentDir, provider, model, env, modelSettings = {}, capabilities = { skills: [], extensions: [] }, onEvent = () => {}, spawnProcess = spawn }) {
-  const cli = fileURLToPath(new URL('../node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js', import.meta.url));
+  // Resolve the installed package; npm may hoist it above Threshold's directory.
+  const cli = fileURLToPath(new URL('./bundle/cli.js', import.meta.resolve('@earendil-works/pi-coding-agent')));
   const extension = fileURLToPath(new URL('./extension.ts', import.meta.url));
   const child = spawnProcess(process.execPath, [cli, '--mode', 'rpc', '--offline', '--no-extensions',
     '--no-skills', '--no-context-files', '--no-prompt-templates', '--no-themes', '--no-approve',
