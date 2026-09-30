@@ -1,10 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { execFile, execFileSync } from 'node:child_process';
 import { promisify } from 'node:util';
+import { fileURLToPath } from 'node:url';
 import { startPi } from '../src/pi.mjs';
 import { startService } from '../src/service.mjs';
 import { selectCapabilities } from '../src/capabilities.mjs';
@@ -20,11 +21,15 @@ function setup() {
   return { home, a: skill('review-sample'), b: skill('coding-sample'), dormant: skill('dormant-sample') };
 }
 const probe = resolve('tests/fixtures/capability-probe.ts');
-const hello = resolve('node_modules/@earendil-works/pi-coding-agent/examples/extensions/hello.ts');
+const hello = fileURLToPath(new URL('../examples/extensions/hello.ts', import.meta.resolve('@earendil-works/pi-coding-agent')));
 
 test('real Pi: explicit skills/extensions compose; discovered settings stay off; next session starts empty', async () => {
   const { home, a, b, dormant } = setup();
   writeFileSync(join(home, 'settings.json'), JSON.stringify({ skills: [dormant], extensions: [hello] }));
+  const mcpMarker = join(home, 'unexpected-mcp-start');
+  writeFileSync(join(home, 'mcp.json'), JSON.stringify({ mcpServers: { dormant: {
+    command: process.execPath, args: ['-e', `require('node:fs').writeFileSync(${JSON.stringify(mcpMarker)}, 'started')`],
+  } } }));
   const sessions = new Set();
   for (const [skills, extensions] of [[[a], [hello]], [[b], []], [[a, b], [hello]], [[], []]]) {
     const pi = startPi({ cwd: home, agentDir: home, provider: 'fixture', model: 'fixture',
@@ -40,11 +45,15 @@ test('real Pi: explicit skills/extensions compose; discovered settings stay off;
       assert.ok(observed.tools.includes('read_task'));
       assert.ok(observed.tools.includes('read_project_board'));
       assert.ok(!observed.tools.includes('start_run'));
+      assert.ok(!observed.tools.includes('codemode'));
+      assert.ok(!observed.tools.includes('tool_search'));
+      for (const tool of ['read', 'write', 'edit', 'bash']) assert.ok(observed.tools.includes(tool), `Missing ordinary tool ${tool}`);
       assert.ok(!observed.systemPrompt.includes('dormant-sample'));
       assert.ok(!observed.systemPrompt.includes('Body marker'), 'discovery does not load skill body');
       assert.equal(observed.systemPrompt.includes('review-sample'), skills.includes(a));
       assert.equal(observed.systemPrompt.includes('coding-sample'), skills.includes(b));
     } finally { assert.equal((await pi.stop()).code, 0); }
+    assert.equal(existsSync(mcpMarker), false, 'unselected built-in MCP must not start configured servers');
   }
   assert.equal(sessions.size, 4);
 });

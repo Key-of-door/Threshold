@@ -77,9 +77,11 @@ Public activity includes completed replies and tool start/end summaries in a fin
 is no token-by-token streaming, full tool-result body or activity reconstruction after service restart. Truncation
 and unavailable observations are shown explicitly. No general tool-approval system is added by the TUI.
 
-This release adds no schema or Run execution-policy change from alpha.5. Pi and pi-tui are pinned to 0.85.1.
-The Windows test suite, isolated rendering/PTY workflows and the user's mouse/Chinese-input dogfood checks
-passed for this iteration. That is not a claim of compatibility with every terminal, font or input method.
+TUI v0.1 added no schema or Run execution-policy change from alpha.5. The alpha.7 maintenance release
+updates Pi and pi-tui to 0.99.1 without changing Threshold's interface code or execution semantics.
+The original alpha.6 Windows test suite, isolated rendering/PTY workflows and the user's mouse/Chinese-input
+dogfood checks passed for that iteration; see the [alpha.7 notes](release-alpha7.md) for the upgrade checks.
+That is not a claim of compatibility with every terminal, font or input method.
 Earlier WSL2 CLI/service validation does not constitute a TUI-specific WSL2 test.
 
 See the [user guide](user-guide.md) for provider setup, worktrees, recovery and CLI workflows.

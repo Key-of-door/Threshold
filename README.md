@@ -54,7 +54,9 @@ On **Windows, use Node 24 LTS at 24.20.0 or newer** (validated with 24.21.0):
 24.18/24.19 can crash when Pi exits immediately after a tool call.
 See [runtime validation](docs/runtime-validation.md) for the upstream fix and test evidence.
 Windows workers need Git for Windows Bash; WSL2 workers use Linux Bash.
-Pi is pinned to **0.85.1** and installed as a dependency.
+Pi and pi-tui are pinned to **0.99.1** and installed as dependencies.
+See the [alpha.7 maintenance notes](docs/release-alpha7.md) for upgrade validation;
+the platform evidence below retains its original alpha.6 scope.
 
 | Environment | Validation status for 0.2.0-alpha.6 |
 | --- | --- |
@@ -83,7 +85,7 @@ threshold --version
 threshold --help
 ```
 
-This release is **0.2.0-alpha.6**, including **Threshold TUI v0.1**. To pin it, use `threshold-lite@0.2.0-alpha.6` instead of `threshold-lite@alpha`.
+This release is **0.2.0-alpha.7**, including **Threshold TUI v0.1**. To pin it, use `threshold-lite@0.2.0-alpha.7` instead of `threshold-lite@alpha`.
 For a user-writable installation directory, use `npm install -g --prefix PATH threshold-lite@alpha`
 and put `PATH` (Windows) or `PATH/bin` (Linux/macOS) on your shell's PATH.
 
@@ -95,7 +97,7 @@ From a source checkout:
 ```sh
 npm ci
 npm pack
-npm install -g ./threshold-lite-0.2.0-alpha.6.tgz
+npm install -g ./threshold-lite-0.2.0-alpha.7.tgz
 ```
 
 If you already have a `.tgz` package, use `npm install -g PATH_TO_PACKAGE.tgz`.
