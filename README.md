@@ -56,20 +56,20 @@ See [runtime validation](docs/runtime-validation.md) for the upstream fix and te
 Windows workers need Git for Windows Bash; WSL2 workers use Linux Bash.
 Pi and pi-tui are pinned to **0.99.1** and installed as dependencies.
 See the [alpha.7 maintenance notes](docs/release-alpha7.md) for upgrade validation;
-the platform evidence below retains its original alpha.6 scope.
+each platform entry below states its validation version.
 
-| Environment | Validation status for 0.2.0-alpha.6 |
+| Environment | Validation evidence |
 | --- | --- |
-| Debian 13.6 x64 Linux (cloud container), Node 24.19.0 | Tested on alpha.6: fresh npm installation, 82/82 source tests, CLI/service lifecycle, real Pi processes, interactive attach/detach, restart persistence, Project archive/restore and TUI PTY workflows |
+| Debian 13.6 x64 Linux (cloud container), Node 24.19.0 | Tested on alpha.7 / Pi 0.99.1: fresh published npm installation with hoisted dependencies, 84/84 source tests, CLI/service lifecycle, real Pi processes, interactive attach/detach, restart handoff/persistence, Project archive/restore and TUI PTY workflows |
 | Windows x64 + Git for Windows Bash | Historical alpha.3 validation: installation, CLI, service and Pi workflows; not revalidated in this Linux check |
 | Ubuntu 24.04 x64 on WSL2 | Historical alpha.3 validation: fresh npm installation, native Linux Node/Bash, interactive attach/detach, restart handoff and Project archive/restore; alpha.6 revalidation pending |
 | Other Linux/WSL distributions, macOS | Not yet tested |
 
-The alpha.6 Linux check (2026-09-30; kernel 6.18.44, npm 11.9.0, Pi 0.85.1) used
-the published npm package and source tag `v0.2.0-alpha.6` (`eab7064`).
+The alpha.7 Linux check (2026-10-01 UTC; kernel 6.18.44, npm 11.9.0, Pi/pi-tui 0.99.1) used
+the published `threshold-lite@0.2.0-alpha.7` npm package and source tag `v0.2.0-alpha.7` (`2a96a6e`).
 TUI checks used a real PTY at 120×36 and 40×20: keyboard/mouse-protocol navigation,
 CJK multiline paste, draft cancellation/resume, explicit inbox and Run input, repeated-submit
-suppression, Inspect scrolling, resizing, and Quit/Ctrl+C without stopping the worker.
+suppression, new-Run configuration, Inspect scrolling, resizing, and Quit/Ctrl+C without stopping the worker.
 This does not validate a physical terminal's IME, clipboard or font behavior.
 
 The Linux and historical WSL2 checks used real Pi processes and local deterministic model
