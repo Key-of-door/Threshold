@@ -54,7 +54,7 @@ On **Windows, use Node 24 LTS at 24.20.0 or newer** (validated with 24.21.0):
 24.18/24.19 can crash when Pi exits immediately after a tool call.
 See [runtime validation](docs/runtime-validation.md) for the upstream fix and test evidence.
 Windows workers need Git for Windows Bash; WSL2 workers use Linux Bash.
-Pi and pi-tui are pinned to **0.99.1** and installed as dependencies.
+Pi and pi-tui are pinned to **1.1.0** and installed as dependencies in this checkout.
 See the [alpha.7 maintenance notes](docs/release-alpha7.md) for upgrade validation;
 each platform entry below states its validation version.
 
@@ -149,7 +149,8 @@ Choose that Task, select a model, and start chatting:
 threshold run --attach
 ```
 
-Optional Skill/Extension prompts can be left blank. No optional capabilities are needed.
+Optional Skill/Extension/MCP configuration path prompts can be left blank. No optional capabilities are needed.
+MCP configurations are selected per Run, with the same path input in CLI and TUI; see [MCP capabilities](docs/mcp.md).
 Enter sends a message; `/detach` leaves the view while the worker continues. Use
 `threshold run stop RUN_ID` when you want to end that worker.
 

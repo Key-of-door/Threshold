@@ -99,7 +99,7 @@ test('CLI selection reaches one Run and survives restart as metadata; the next R
     assert.deepEqual(context.recentRuns[0].capabilities, run.capabilities);
     assert.equal(context.task.status, 'in_progress'); assert.equal(context.controlled.decisions.length, 0);
     const next = (await call(`/tasks/${task.id}/runs`, { provider: 'fixture', model: 'fixture' })).data;
-    assert.deepEqual(next.capabilities, { skills: [], extensions: [] });
+    assert.deepEqual(next.capabilities, { skills: [], extensions: [], mcp: [] });
     assert.ok(!prompt.includes(a)); assert.ok(!prompt.includes(b));
     await call(`/runs/${next.id}/stop`, {});
   } finally { await service.close(); }

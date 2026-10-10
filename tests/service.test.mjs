@@ -83,13 +83,14 @@ test('HTTP run credentials cannot issue Human decisions; local ASK allows checkp
   } finally { await service.close(); }
 });
 
-test('a model error followed by agent_end and process exit 0 remains a runtime error, not Task success', async () => {
+for (const failure of ['error', 'aborted']) test(`a model ${failure} followed by agent_end and process exit 0 remains a runtime error, not Task success`, async () => {
   const home = temp(), repo = temp();
   execFileSync('git', ['init', repo], { windowsHide: true, stdio: 'ignore' });
   const service = await startService({ home, agentDir: home, port: 0, workerFactory: ({ onEvent }) => ({
     request: async () => ({ sessionId: 'failed-model-session' }),
     turn: async () => {
-      onEvent({ type: 'message_end', message: { role: 'assistant', stopReason: 'error', errorMessage: 'provider detail omitted' } });
+      if (failure === 'error') onEvent({ type: 'message_end', message: { role: 'assistant', stopReason: 'error', errorMessage: 'provider detail omitted' } });
+      else onEvent({ type: 'agent_settled', aborted: true });
       onEvent({ type: 'agent_end' });
     }, stop: async () => ({ code: 0 }),
   }) });
@@ -105,7 +106,7 @@ test('a model error followed by agent_end and process exit 0 remains a runtime e
     const actual = await call(`/runs/${run.id}`);
     assert.equal(actual.exit_code, 0);
     assert.equal(actual.status, 'ended');
-    assert.match(actual.error, /model turn error/);
+    assert.match(actual.error, new RegExp(`model turn ${failure}`));
     const state = await call(`/tasks/${task.id}`);
     assert.equal(state.task.status, 'in_progress');
     assert.equal(state.checkpoint, null);

@@ -110,7 +110,7 @@ threshold project create --repo "E:/my-project" --init-git
 `task create` asks for missing title/instructions and, when necessary, the Project.
 `run --attach` lists Tasks and models so you can choose numbers rather than copy UUIDs.
 The configured default model is offered, not forced. The guided path also asks for an
-optional objective, Skill path and Extension path. Blank capability inputs mean none;
+optional objective, Skill path, Extension path and MCP configuration file path. Blank capability inputs mean none;
 the next Run never inherits them. Use repeated flags for multiple capabilities.
 Native model choices come from Pi's local catalog/configuration, not a live provider query.
 Extension-defined models can still be selected explicitly with `--provider`/`--model`.
@@ -130,7 +130,7 @@ request payloads are never copied into project history.
 
 ### Manual / existing Pi setup
 
-Threshold uses Pi 0.99.1 configuration without owning model routing or login. If Pi already works with
+Threshold uses Pi 1.1.0 configuration without owning model routing or login. If Pi already works with
 your provider, use the same agent directory. The service defaults to `~/.pi/agent`; `--agent-dir PATH`
 selects another directory. Service restarts must select it again. No author-specific configuration is required.
 
@@ -150,10 +150,11 @@ On Windows put this in that Pi directory's `settings.json` (adjust the executabl
 Then start `threshold service start --agent-dir YOUR_PI_CONFIG` and use `--provider deepseek --model deepseek-flash`
 on a Run. Model calls are billable according to your provider. The example's context/output settings
 are conservative local settings, not claims about maximum provider capabilities.
-Other providers use Pi's native setup; see [Pi configuration](https://github.com/earendil-works/pi/tree/v0.99.1/packages/coding-agent).
+Other providers use Pi's native setup; see [Pi configuration](https://github.com/earendil-works/pi/tree/v1.1.0/packages/coding-agent).
 The bundled catalog now includes `deepseek-flash`; setup uses that entry without requiring a custom
 `models.json`. Existing custom declarations and stored credentials remain supported.
-New upstream built-in extensions (including MCP and codemode) are not automatically enabled in Threshold Runs.
+Upstream built-in extensions are not automatically enabled. Selecting an MCP configuration explicitly loads
+Threshold's Run-local MCP adapter and Pi's codemode/tool-search support; global/project MCP discovery remains off.
 
 ## Data and project selection
 
@@ -409,9 +410,13 @@ threshold run --task ID --provider PROVIDER --model MODEL --skill ./skills/revie
 threshold run --task ID --provider PROVIDER --model MODEL --workspace PATH_TO_EXISTING_WORKTREE
 ```
 
-Repeat skill/extension flags to compose capabilities; the next Run defaults to empty. A skill path can
+Repeat skill/extension/mcp flags to compose capabilities; the next Run defaults to empty. A skill path can
 name a SKILL.md or its directory. Extensions name entry files. Relative paths resolve from the CLI cwd.
 Installed does not mean active. Entry path/SHA is selection metadata, not a full dependency snapshot.
+
+The guided CLI and TUI New Run form also accept absolute MCP JSON file paths. Only selected files are
+loaded; no global or project `mcp.json` is merged. See [MCP capabilities](mcp.md) for the format,
+PyCharm setup, runtime observations and authentication limits.
 
 Use ordinary `git worktree` for parallel edits. The service checks same-repository roots and managed
 workspace occupancy. This is not OS isolation. The service owns workers; one scheduler Run ending does

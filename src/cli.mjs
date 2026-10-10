@@ -24,7 +24,7 @@ async function main() {
   try {
     ({ values: args, positionals: commands } = parseArgs({ allowPositionals: true, options: {
       ...Object.fromEntries(['home', 'agent-dir', 'port', 'name', 'repo', 'project', 'title', 'instructions', 'instructions-file', 'task', 'provider', 'model', 'run', 'target', 'value', 'objective', 'status', 'note', 'body', 'body-file', 'after', 'limit', 'workspace', 'max-parallel-runs', 'max-runs', 'thinking', 'context-window', 'max-output-tokens', 'turn-timeout'].map(key => [key, { type: 'string' }])),
-      skill: { type: 'string', multiple: true }, extension: { type: 'string', multiple: true },
+      skill: { type: 'string', multiple: true }, extension: { type: 'string', multiple: true }, mcp: { type: 'string', multiple: true },
       ...Object.fromEntries(['summary', 'json', 'all', 'include-archived', 'help', 'version', 'ascii', 'no-color', 'no-mouse', 'attach', 'confirm-reusable', 'init-git'].map(key => [key, { type: 'boolean' }])) } }));
   } catch (error) { report(`${error.message}\nRun threshold --help.`); return 1; }
   if (args.version) { console.log(`threshold ${JSON.parse(readFileSync(new URL('../package.json', import.meta.url))).version}`); return 0; }
@@ -254,14 +254,15 @@ async function main() {
           label: `${m.id}${m.configured === false ? ' / credential missing' : m.configured === null ? ' / credential checked at start' : ''}` })), catalog.defaultProvider === args.provider ? catalog.defaultModel : undefined);
       }
       if (guided) {
-        args.objective ??= await ui().ask('This Run objective (optional)');
+        args.objective ??= (await ui().ask('This Run objective (optional)')) || undefined;
         if (!args.skill) { const path = await ui().ask('Skill path (optional; Enter for none)'); if (path) args.skill = [path]; }
         if (!args.extension) { const path = await ui().ask('Extension path (optional; Enter for none)'); if (path) args.extension = [path]; }
+        if (!args.mcp) { const path = await ui().ask('MCP configuration absolute path (optional; Enter for none)'); if (path) args.mcp = [path]; }
       }
       const task = required('task'), provider = required('provider'), model = required('model');
       const run = await call(`/tasks/${await entity('task', task)}/runs`, { provider, model, objective: args.objective,
         modelSettings, turnTimeoutSeconds,
-        interactive: Boolean(args.attach), workspacePath: args.workspace && resolve(args.workspace), skills: args.skill?.map(path => resolve(path)), extensions: args.extension?.map(path => resolve(path)) });
+        interactive: Boolean(args.attach), workspacePath: args.workspace && resolve(args.workspace), skills: args.skill?.map(path => resolve(path)), extensions: args.extension?.map(path => resolve(path)), mcp: args.mcp?.map(path => resolve(path)) });
       if (args.attach) await attach(run.id); else print(run);
     } else if (command === 'run attach') {
       if (runPosition && args.run) throw new Error('Specify the Run once: run attach ID or run attach --run ID.');

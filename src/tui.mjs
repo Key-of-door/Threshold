@@ -24,7 +24,7 @@ const clock = iso => iso ? when(iso).slice(11, 19) : 'none';
 const zone = (name, ...blocks) => blocks.filter(Boolean).map(b => ({ ...b, zone: name }));
 const fieldLabels = { provider: 'Provider', model: 'Model', thinking: 'Thinking', contextWindow: 'Context window (empty = Pi default)',
   maxOutputTokens: 'Output ceiling (empty = Pi default)', mode: 'Execution mode', turnTimeoutSeconds: 'Background timeout / seconds (0 disables)',
-  objective: 'This Run objective', workspacePath: 'Workspace / existing Git worktree', skills: 'Skill paths / one per line', extensions: 'Extension entry paths / one per line' };
+  objective: 'This Run objective', workspacePath: 'Workspace / existing Git worktree', skills: 'Skill paths / one per line', extensions: 'Extension entry paths / one per line', mcp: 'MCP config paths / one per line' };
 const unicode = { pointer: '❯', rule: '─', crumb: ' › ', ellipsis: '…', user: '›', agent: '●', start: '▸', end: '◂' };
 const ascii = { pointer: '>', rule: '-', crumb: ' > ', ellipsis: '...', user: '>', agent: '*', start: '>', end: '<' };
 

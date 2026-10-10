@@ -89,7 +89,7 @@ export async function startService({ home, agentDir, port = 8765, workerFactory 
       if (store.task(taskId).project_id !== store.task(run.task_id).project_id) throw problem(403, 'Task belongs to another Project');
       return taskId;
     };
-    async function launch(taskId, provider, model, objective, skills, extensions, workspace, startedBy = null, interactive = false, settings, turnTimeoutSeconds) {
+    async function launch(taskId, provider, model, objective, skills, extensions, workspace, startedBy = null, interactive = false, settings, turnTimeoutSeconds, mcp) {
       if (typeof interactive !== 'boolean') throw problem(400, 'interactive must be a boolean');
       let requested, execution;
       try { requested = runSettings(settings); execution = executionSettings(interactive, turnTimeoutSeconds); } catch (error) { throw problem(400, error.message); }
@@ -112,8 +112,8 @@ export async function startService({ home, agentDir, port = 8765, workerFactory 
       if (unsettled.length >= maxParallelRuns) throw problem(429, 'Parallel Run limit reached (including unknown exits); no Run started');
       if (store.runCount() >= maxRuns) throw problem(429, 'Cumulative Run limit reached for this service home; no Run started');
       let capabilities;
-      try { capabilities = selectCapabilities(skills, extensions); }
-      catch { throw problem(400, 'Invalid capability selection: use existing absolute local skill or extension file paths'); }
+      try { capabilities = selectCapabilities(skills, extensions, mcp); }
+      catch { throw problem(400, 'Invalid capability selection: use existing absolute local skill/extension/MCP file paths; MCP files require valid mcpServers entries with unique server names'); }
       // No await between resource checks and the durable insert; all launch routes share this path.
       const run = store.startRun(taskId, provider, model, objective, capabilities, repo, startedBy, requested, execution);
       const token = randomBytes(32).toString('hex');
@@ -129,12 +129,21 @@ export async function startService({ home, agentDir, port = 8765, workerFactory 
           job.worker = workerFactory({ cwd: job.repo, agentDir, provider, model, capabilities, modelSettings: requested,
             env: { THRESHOLD_SERVICE_URL: url, THRESHOLD_RUN_TOKEN: token },
             onEvent(event) {
+              if (event.type === 'threshold_mcp' && capabilities.mcp.some(file => file.servers.some(server => server.name === event.name))
+                && ['selected', 'disabled', 'connecting', 'initialized', 'tools_discovered', 'connection_error', 'disconnected', 'closed'].includes(event.state)) {
+                job.observation.mcp ??= Object.create(null);
+                job.observation.mcp[event.name] = { state: event.state,
+                  toolCount: Number.isSafeInteger(event.toolCount) && event.toolCount >= 0 ? event.toolCount : 0,
+                  observedAt: new Date().toISOString() };
+              }
               if (event.type === 'extension_error' && event.event === 'session_start') settingsFailed = true;
               const cleanupAbort = event.type === 'message_end' && event.message?.stopReason === 'aborted' && (job.cancelled || job.stopping);
               // Retain any public partial reply, but do not render our own cleanup as a new model failure.
               job.live.observe(cleanupAbort ? { ...event, message: { ...event.message, stopReason: undefined } } : event);
               if (event.type === 'agent_start' && !job.cancelled) job.phase = 'working';
               if (event.type === 'agent_settled' && !job.cancelled) {
+                if (event.aborted && !job.stopping)
+                  error ??= 'Pi reported model turn aborted; inspect project state before continuing';
                 job.phase = interactive ? 'waiting for input' : 'settled';
                 if (!interactive) job.ready = false;
               }
@@ -250,7 +259,7 @@ export async function startService({ home, agentDir, port = 8765, workerFactory 
             const taskId = sameProjectTask(run, text(data.taskId, 'taskId'));
             return reply(202, await launch(taskId, data.provider === undefined ? run.provider : text(data.provider, 'provider', 100),
               data.model === undefined ? run.model : text(data.model, 'model', 200),
-              text(data.objective, 'objective', 6000), data.skills, data.extensions, text(data.workspacePath, 'workspacePath'), run.id, false, data.modelSettings, data.turnTimeoutSeconds));
+              text(data.objective, 'objective', 6000), data.skills, data.extensions, text(data.workspacePath, 'workspacePath'), run.id, false, data.modelSettings, data.turnTimeoutSeconds, data.mcp));
           }
           const projectRun = path.match(/^\/agent\/project\/runs\/([^/]+)$/);
           if (method === 'GET' && projectRun) {
@@ -339,7 +348,7 @@ export async function startService({ home, agentDir, port = 8765, workerFactory 
           const run = tokens.get(req.headers.authorization?.replace(/^Bearer /, ''));
           if (run) sameProjectTask(run, taskRoute[1]);
           return reply(202, await launch(taskRoute[1], text(data.provider, 'provider', 100), text(data.model, 'model', 200),
-            data.objective === undefined ? null : text(data.objective, 'objective', 6000), data.skills, data.extensions, data.workspacePath, run?.id, data.interactive, data.modelSettings, data.turnTimeoutSeconds));
+            data.objective === undefined ? null : text(data.objective, 'objective', 6000), data.skills, data.extensions, data.workspacePath, run?.id, data.interactive, data.modelSettings, data.turnTimeoutSeconds, data.mcp));
         }
         const runRoute = path.match(/^\/runs\/([^/]+)(\/(?:stop|live|input|recover))?$/);
         if (runRoute) {

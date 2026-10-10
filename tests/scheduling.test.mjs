@@ -59,7 +59,7 @@ test('peers use distinct worktrees, retain workers after scheduler exits, and a 
     assert.equal(ra.data.execution.turnTimeoutSeconds, 1800, 'peer does not inherit caller timeout');
     assert.equal(rb.data.execution.turnTimeoutSeconds, 600, 'peer timeout selection is explicit');
     assert.equal(ra.data.started_by_run_id, s1.id);
-    assert.deepEqual(ra.data.capabilities, { skills: [], extensions: [] });
+    assert.deepEqual(ra.data.capabilities, { skills: [], extensions: [], mcp: [] });
     assert.deepEqual(ra.data.modelSettings.requested, {}, 'peer does not inherit caller model settings');
     assert.deepEqual(rb.data.modelSettings.requested, { thinking: 'medium' }, 'peer selection is explicit');
     assert.deepEqual(env.workers.slice(1).map(worker => worker.cwd).sort(), [env.a, env.b].sort());

@@ -30,6 +30,7 @@
     "LICENSE",
     "README.md",
     "docs/user-guide.md",
+    "docs/mcp.md",
     "docs/cli-migration.md",
     "docs/runtime-validation.md",
     "docs/release-alpha7.md",
@@ -45,8 +46,8 @@
     "demo:restart": "node tests/restart-demo.mjs"
   },
   "dependencies": {
-    "@earendil-works/pi-coding-agent": "0.99.1",
-    "@earendil-works/pi-tui": "0.99.1",
+    "@earendil-works/pi-coding-agent": "1.1.0",
+    "@earendil-works/pi-tui": "1.1.0",
     "string-width": "8.2.2"
   }
 }

@@ -265,10 +265,17 @@ test('new Run form uses existing launch semantics, preserves rejected draft, and
   try {
     await app.initialize(); await app.openTask(f.task.id); await app.newRun();
     app.form.draft.mode = 'background'; app.form.draft.turnTimeoutSeconds = '0'; app.form.draft.objective = 'Independent objective';
+    const mcp = join(f.home, 'mcp-selection.json');
+    writeFileSync(mcp, JSON.stringify({ mcpServers: { fixture: { command: process.execPath, enabled: false } } }));
+    app.form.draft.mcp = mcp;
+    assert.ok(app.formBlocks().some(b => b.action?.id === 'field:mcp'));
     const start = () => app.formBlocks().flatMap(b => b.actions ?? []).find(a => a.id === 'start').run();
     await start(); assert.equal(app.page, 'run'); assert.equal(app.run.execution.mode, 'background'); assert.equal(app.run.execution.turnTimeoutSeconds, 0);
+    assert.equal(app.run.capabilities.mcp[0].path, mcp);
+    assert.equal(f.workers[0].capabilities.mcp[0].path, mcp);
     const firstId = app.run.id; assert.equal((await f.call(`/tasks/${f.task.id}`)).task.instructions, '真实说明\nKeep full instructions.');
     await app.newRun(); assert.equal(app.form.draft.skills, ''); assert.equal(app.form.draft.extensions, '');
+    assert.equal(app.form.draft.mcp, '');
     app.form.draft.objective = 'Keep this draft after busy workspace error';
     await assert.rejects(start(), /worktree/); assert.equal(app.form.draft.objective, 'Keep this draft after busy workspace error');
     app.form = null; await app.openRun(firstId); assert.equal(app.run.execution.mode, 'background');

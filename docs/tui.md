@@ -38,8 +38,10 @@ Use `--project` to scope Task/Run lookup. Choose either `--task` or `--run`, not
 - **Task:** read instructions, checkpoint and inbox, record a work assessment with a note, or configure a fresh Run.
   Messages and checkpoints retain their source. They are narratives to check against the workspace, not test results.
 - **New Run:** choose its objective, existing workspace, model, thinking, context/output ceilings, execution mode
-  and explicit Skill/Extension paths. Configuration belongs to this Run and becomes read-only after launch.
+  and explicit Skill/Extension/MCP configuration paths (one per line). Configuration belongs to this Run and becomes read-only after launch.
   Fresh Runs do not inherit capability selections.
+  MCP uses selected JSON files only; global/project MCP discovery stays off. Run Inspect includes selection
+  metadata and timestamped transport observations. See [MCP capabilities](mcp.md).
 - **Run:** inspect startup configuration and public activity, send input, or explicitly stop that Run.
   Run lifecycle, working/waiting phase and client connection state are displayed separately.
 - **Git:** inspect the chosen workspace's status, tracked staged/unstaged diff or a small text file. Workspace and

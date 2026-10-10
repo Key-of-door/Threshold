@@ -53,7 +53,7 @@ export async function projectAtCwd(projects, cwd) {
 
 export function runDraft(project, catalog = {}, timeout = 1800) {
   return { provider: catalog.defaultProvider ?? '', model: catalog.defaultModel ?? '', thinking: 'low', contextWindow: '', maxOutputTokens: '',
-    mode: 'interactive', turnTimeoutSeconds: String(timeout), objective: '', workspacePath: project.repo_path, skills: '', extensions: '' };
+    mode: 'interactive', turnTimeoutSeconds: String(timeout), objective: '', workspacePath: project.repo_path, skills: '', extensions: '', mcp: '' };
 }
 
 export function runPayload(draft, cwd) {
@@ -76,7 +76,7 @@ export function runPayload(draft, cwd) {
   return { provider: draft.provider.trim(), model: draft.model.trim(), interactive,
     modelSettings: runSettings(settings), ...(timeout === undefined ? {} : { turnTimeoutSeconds: timeout }),
     ...(draft.objective.trim() ? { objective: draft.objective } : {}), workspacePath: resolve(cwd, draft.workspacePath),
-    skills: paths(draft.skills), extensions: paths(draft.extensions) };
+    skills: paths(draft.skills), extensions: paths(draft.extensions), mcp: paths(draft.mcp ?? '') };
 }
 
 export async function workspaceObservation(workspace, kind = 'status') {

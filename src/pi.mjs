@@ -11,9 +11,12 @@ export function startPi({ cwd, agentDir, provider, model, env, modelSettings = {
     '--no-skills', '--no-context-files', '--no-prompt-templates', '--no-themes', '--no-approve',
     ...capabilities.skills.flatMap(file => ['--skill', file.path]),
     ...capabilities.extensions.flatMap(file => ['--extension', file.path]),
+    ...((capabilities.mcp?.length ?? 0) ? ['--extension', 'builtin:codemode', '--extension', 'builtin:tool-search',
+      '--extension', fileURLToPath(new URL('./mcp-extension.ts', import.meta.url))] : []),
     '--extension', extension, '--provider', provider, '--model', model, '--thinking', modelSettings.thinking ?? 'low',
     '--no-session'], { cwd, shell: false, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'],
-    env: { ...process.env, ...env, PI_CODING_AGENT_DIR: agentDir, PI_TELEMETRY: '0', THRESHOLD_MODEL_SETTINGS: JSON.stringify(modelSettings) } });
+    env: { ...process.env, ...env, PI_CODING_AGENT_DIR: agentDir, PI_TELEMETRY: '0', THRESHOLD_MODEL_SETTINGS: JSON.stringify(modelSettings),
+      THRESHOLD_MCP_SELECTION: JSON.stringify((capabilities.mcp ?? []).map(({ path, sha256 }) => ({ path, sha256 }))) } });
   const bus = new EventEmitter(), pending = new Map();
   let buffer = '', sequence = 0, requestId = 0, closed = false, lastError, forced = false;
   const fail = error => {
@@ -33,7 +36,13 @@ export function startPi({ cwd, agentDir, provider, model, env, modelSettings = {
       while ((n = buffer.indexOf('\n')) >= 0) {
         const line = buffer.slice(0, n).replace(/\r$/, ''); buffer = buffer.slice(n + 1);
         if (!line) continue;
-        const event = JSON.parse(line); sequence++;
+        let event = JSON.parse(line); sequence++;
+        // Our MCP adapter publishes status through Pi's supported RPC UI surface,
+        // which keeps it out of conversation messages and model context.
+        if (event.type === 'extension_ui_request' && event.method === 'setStatus' && event.statusKey === 'threshold:mcp') {
+          try { const status = JSON.parse(event.statusText); event = { ...status, type: 'threshold_mcp' }; }
+          catch { /* Ignore malformed status; retain the original UI event. */ }
+        }
         if (event.type === 'response' && pending.has(event.id)) {
           const p = pending.get(event.id); pending.delete(event.id);
           event.success ? p.resolve(event.data) : p.reject(new Error(event.error));
