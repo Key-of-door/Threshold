@@ -1,7 +1,7 @@
 # MCP capabilities per Run
 
-This is an unreleased source change using Pi 1.1.0. The published alpha.7 package
-does not yet provide this entry point.
+Available in Threshold 0.2.0-alpha.8 using Pi 1.1.0. Earlier Threshold packages
+do not provide this entry point.
 
 MCP joins Skill and Extension as an optional Run-local file selection. In the
 guided `threshold run` flow, paste an absolute configuration file path at the MCP

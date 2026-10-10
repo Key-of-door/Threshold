@@ -1,7 +1,7 @@
 # Run-local MCP capability — implementation and validation
 
-2026-10-10. Source change, not a published release or an upgrade of the running
-global service. User guide: [MCP capabilities](../mcp.md).
+2026-10-10. Implementation for Threshold 0.2.0-alpha.8. Installing the package
+does not upgrade a running service. User guide: [MCP capabilities](../mcp.md).
 
 ## Scope
 

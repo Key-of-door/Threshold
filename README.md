@@ -19,6 +19,13 @@ threshold tui
 The TUI is an optional interface to the same Projects, Tasks and Runs. CLI commands remain available;
 opening or leaving the TUI does not start or stop workers. [TUI guide](docs/tui.md).
 
+**Choose capabilities for each Run.** In the guided CLI or TUI New Run form, enter
+absolute paths to Skills, Extensions or **MCP configuration files**. Leave them blank
+for none. MCP connects through Pi to stdio or Streamable HTTP servers, including a
+compatible JetBrains IDE. Each Run loads only its selected MCP files; global/project
+MCP configurations are not automatically merged, and fresh Runs inherit no selection.
+[MCP guide and PyCharm setup](docs/mcp.md).
+
 [Report a problem or friction](https://github.com/Key-of-door/Threshold/issues/new/choose) ·
 [Questions, experiments and community](https://github.com/Key-of-door/Threshold-capability/discussions) ·
 English / 中文 welcome.
@@ -54,15 +61,15 @@ On **Windows, use Node 24 LTS at 24.20.0 or newer** (validated with 24.21.0):
 24.18/24.19 can crash when Pi exits immediately after a tool call.
 See [runtime validation](docs/runtime-validation.md) for the upstream fix and test evidence.
 Windows workers need Git for Windows Bash; WSL2 workers use Linux Bash.
-Pi and pi-tui are pinned to **1.1.0** and installed as dependencies in this checkout.
-See the [alpha.7 maintenance notes](docs/release-alpha7.md) for upgrade validation;
+Pi and pi-tui are pinned to **1.1.0** and installed as dependencies.
+See the [alpha.8 release notes](docs/release-alpha8.md) for MCP support and upgrade validation;
 each platform entry below states its validation version.
 
 | Environment | Validation evidence |
 | --- | --- |
 | Debian 13.6 x64 Linux (cloud container), Node 24.19.0 | Tested on alpha.7 / Pi 0.99.1: fresh published npm installation with hoisted dependencies, 84/84 source tests, CLI/service lifecycle, real Pi processes, interactive attach/detach, restart handoff/persistence, Project archive/restore and TUI PTY workflows |
-| Windows x64 + Git for Windows Bash | Historical alpha.3 validation: installation, CLI, service and Pi workflows; not revalidated in this Linux check |
-| Ubuntu 24.04 x64 on WSL2 | Historical alpha.3 validation: fresh npm installation, native Linux Node/Bash, interactive attach/detach, restart handoff and Project archive/restore; alpha.6 revalidation pending |
+| Windows x64 + Git for Windows Bash, Node 24.21.0 | Tested on alpha.8 / Pi 1.1.0: 90/90 source tests, fresh package installation, real Pi RPC and MCP stdio/HTTP calls, direct/codemode/deferred tools, per-Run selection, cleanup and 60 TUI frames at four sizes; physical IME/mouse and live PyCharm/OAuth not revalidated |
+| Ubuntu 24.04 x64 on WSL2 | Tested on alpha.7 / Pi 0.99.1: clean npm ci and 84/84 source tests; earlier alpha.3 install/interactive workflows remain historical evidence; alpha.8 not yet revalidated |
 | Other Linux/WSL distributions, macOS | Not yet tested |
 
 The alpha.7 Linux check (2026-10-01 UTC; kernel 6.18.44, npm 11.9.0, Pi/pi-tui 0.99.1) used
@@ -85,7 +92,7 @@ threshold --version
 threshold --help
 ```
 
-This release is **0.2.0-alpha.7**, including **Threshold TUI v0.1**. To pin it, use `threshold-lite@0.2.0-alpha.7` instead of `threshold-lite@alpha`.
+This release is **0.2.0-alpha.8**, including **Threshold TUI v0.1** and optional **Run-local MCP capabilities**. To pin it, use `threshold-lite@0.2.0-alpha.8` instead of `threshold-lite@alpha`.
 For a user-writable installation directory, use `npm install -g --prefix PATH threshold-lite@alpha`
 and put `PATH` (Windows) or `PATH/bin` (Linux/macOS) on your shell's PATH.
 
@@ -97,7 +104,7 @@ From a source checkout:
 ```sh
 npm ci
 npm pack
-npm install -g ./threshold-lite-0.2.0-alpha.7.tgz
+npm install -g ./threshold-lite-0.2.0-alpha.8.tgz
 ```
 
 If you already have a `.tgz` package, use `npm install -g PATH_TO_PACKAGE.tgz`.
@@ -268,6 +275,7 @@ any runtime marker or retrying a failed startup.
   `TERM=dumb` use plain output automatically; no special fonts are needed.
 - Use `--instructions-file PATH` or `--body-file PATH` for long Task/message text, especially text containing quotes in Windows PowerShell 5.1.
 - [User guide](docs/user-guide.md): configuration, messages, worktrees, capabilities, technical errors and current limits.
+- [MCP capabilities](docs/mcp.md): configuration file selection in CLI/TUI, PyCharm, connection observations and authentication limits.
 - [Changes from the prototype CLI](docs/cli-migration.md): new home, output and stop commands.
 - [Optional Threshold-capability cookbook](https://github.com/Key-of-door/Threshold-capability): select skill/extension paths per Run; nothing is installed or activated automatically.
 
