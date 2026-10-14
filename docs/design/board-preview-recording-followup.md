@@ -3,7 +3,7 @@
 2026-09-15. Ordinary presentation change, not a schema or runtime increment.
 
 Historical snapshot of this increment. Interactive Runs were implemented afterward;
-see the [interactive Run report](../interactive-runs-report.md) and
+see the [interactive Run report](../history/interactive-runs-report.md) and
 [current user guide](../user-guide.md#interactive-runs) for the later behavior.
 
 The first real recording exposed long single-paragraph objectives/checkpoints

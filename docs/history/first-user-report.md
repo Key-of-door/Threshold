@@ -25,7 +25,7 @@ Windows，Node 24.18.0，npm 11.16.0，Pi 0.85.1，DeepSeek `deepseek-flash`。�
 
 练习目录 `E:/Threshold-first-user/log-summary`；安装 prefix `E:/Threshold-first-user/install`；公开 Pi 配置 `E:/Threshold-first-user/pi-agent`。凭据只通过本轮获准的进程环境提供，未复制作者的 `.local/pi-agent`。
 
-使用真正的默认 home `C:/Users/yang/AppData/Local/Threshold`，开始前该目录不存在。没有传 `--home`，B 从 `examples` 子目录进入后仍找到原 Project。不是独立 OS 用户，也不声称权限隔离。
+使用真正的默认 home `C:/Users/LOCAL_USER/AppData/Local/Threshold`，开始前该目录不存在。没有传 `--home`，B 从 `examples` 子目录进入后仍找到原 Project。不是独立 OS 用户，也不声称权限隔离。
 
 首次测试器启动因 Codex CLI 0.149.1 太旧，服务端返回 HTTP 400：当前 Astra 模型要求更新 CLI。该调用没有执行用户步骤。操作者在实验工具目录单独安装稳定版 0.154.0 后重新创建 A，保留错误记录，没有改 Threshold、换模型或把它归类为 safety interruption。
 

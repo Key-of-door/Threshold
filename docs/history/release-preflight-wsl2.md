@@ -46,7 +46,7 @@ localhost proxy was not mirrored into WSL NAT networking; direct downloads and n
 No global proxy/networking change was needed for this validation.
 
 Threshold was freshly installed **from the public npm registry**, not a local tarball or linked
-checkout. Its installed executable was `/home/yang/.local/bin/threshold` and ran on Linux Node.
+checkout. Its installed executable was `/home/REDACTED_USER/.local/bin/threshold` and ran on Linux Node.
 
 The installed package passed:
 

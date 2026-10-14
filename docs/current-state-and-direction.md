@@ -45,9 +45,9 @@ Project 也不拥有全部事实。源码与 diff 在 Git/filesystem，运行事
 
 主要入口：
 
-- [持久接手](persistent-handoff.md)、[Run objective / Task status](run-objective-task-status.md)
-- [Message review → revise](minimal-messages.md)、[per-Run capabilities](per-run-capabilities.md)
-- [首次 self-hosting](self-hosting-2026-09-13.md)、[并发与替换 scheduler](project-scheduling-2026-09-13.md)
+- [持久接手](history/persistent-handoff.md)、[Run objective / Task status](history/run-objective-task-status.md)
+- [Message review → revise](history/minimal-messages.md)、[per-Run capabilities](history/per-run-capabilities.md)
+- [首次 self-hosting](history/self-hosting-2026-09-13.md)、[并发与替换 scheduler](history/project-scheduling-2026-09-13.md)
 - [外部 read_doc 实验](https://github.com/Key-of-door/Threshold-capability/blob/8094854f01d04b83d62f413cbc81b0517d038bdd/docs/read-doc-experiment-2026-09-14.md)
 - [GitHub read + reviewer 实验](https://github.com/Key-of-door/Threshold-capability/blob/8094854f01d04b83d62f413cbc81b0517d038bdd/docs/github-read-experiment-2026-09-14.md)
 

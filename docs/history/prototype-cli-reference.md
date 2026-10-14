@@ -1,6 +1,6 @@
 # Prototype CLI reference (0.1, historical)
 
-Previous README retained as history. Commands/defaults may be outdated. Use [README](../README.md) and [user guide](user-guide.md) for current behavior.
+Previous README retained as history. Commands/defaults may be outdated. Use [README](../../README.md) and [user guide](../user-guide.md) for current behavior.
 
 Project persists. Agents come and go.
 
@@ -175,4 +175,4 @@ npm run demo:restart
 
 尚未实现跨 Task/具名接收者消息、自动通知、真实远端操作、自动重试/reconcile、多用户服务和完整客户端。它们各自等待真实使用需求。
 
-架构方向见 [Working Architecture](working-architecture.md)（参考，不是 freeze）。历史 A/B/C 观察保留在 [spikes](../spikes/)，不自动等同于当前实现的验证结果。
+架构方向见 [Working Architecture](../working-architecture.md)（参考，不是 freeze）。历史 A/B/C 观察保留在 [spikes](../../spikes/)，不自动等同于当前实现的验证结果。
