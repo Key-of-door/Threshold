@@ -16,6 +16,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-      # No dependencies needed: scans tracked files for personal local paths
-      # and broken relative Markdown links.
-      - run: node scripts/check-hygiene.mjs
+      # No dependencies needed: test the checker, then scan tracked files
+      # for personal local paths and broken relative Markdown links.
+      - run: npm run check:hygiene

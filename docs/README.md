@@ -29,3 +29,10 @@ Start with the [project README](../README.md). This page only says where things 
 [`history/`](history/) keeps dated development and observation records: first self-hosting, scheduler
 experiments, first-user sessions, interactive Runs and the 0.1 prototype CLI reference. They describe what
 happened at the time and may not match the current implementation; check the code and the README first.
+
+## Repository checks
+
+From a source checkout, run `npm run check:hygiene` (Node and Git required; no dependency install).
+This runs the checker's regression tests, then scans Git-tracked files for personal local paths and
+broken relative inline Markdown links. Stage new files and deletions first so the scan uses the
+intended file list. Link checks cover file/directory targets, not heading anchors or external URLs.

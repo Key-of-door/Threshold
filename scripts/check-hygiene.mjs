@@ -4,8 +4,8 @@
 // Exits 1 when a problem is found. Scans Git-tracked files only.
 
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync, statSync } from 'node:fs';
-import { dirname, extname, join, normalize, relative, resolve } from 'node:path';
+import { readFileSync, statSync } from 'node:fs';
+import { dirname, extname, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -66,15 +66,25 @@ function stripCode(text) {
 
 for (const file of tracked) {
   if (extname(file).toLowerCase() !== '.md') continue;
-  const text = stripCode(readFileSync(join(root, file), 'utf8'));
+  let text;
+  try {
+    text = stripCode(readFileSync(join(root, file), 'utf8'));
+  } catch (error) {
+    problems.push(`${file}: cannot read tracked Markdown file (${error.code})`);
+    continue;
+  }
   for (const match of text.matchAll(/\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g)) {
     let target = match[1];
     if (/^[a-z][a-z0-9+.-]*:/i.test(target) || target.startsWith('#') || target.startsWith('//')) continue;
-    target = decodeURIComponent(target.split('#')[0].split('?')[0]);
+    try {
+      target = decodeURIComponent(target.split('#')[0].split('?')[0]);
+    } catch {
+      problems.push(`${file}: invalid URL encoding in link "${match[1]}"`);
+      continue;
+    }
     if (!target) continue;
     const resolved = normalize(join(dirname(file), target)).replace(/[/\\]$/, '');
     if (resolved === '.' || trackedSet.has(resolved) || trackedDirs.has(resolved)) continue;
-    if (existsSync(join(root, resolved)) && relative(root, join(root, resolved)).startsWith('..')) continue;
     problems.push(`${file}: broken link "${match[1]}"`);
   }
 }

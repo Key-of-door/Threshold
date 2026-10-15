@@ -3,3 +3,9 @@ node_modules/
 .env
 .env.*
 !.env.example
+
+# Local package builds, npm diagnostics and OS metadata.
+/threshold-lite-*.tgz
+npm-debug.log*
+.DS_Store
+Thumbs.db
